@@ -54,13 +54,19 @@ exports.uploadAndAnalyzePYQ = async (req, res, next) => {
     if (analysis && analysis.importantTopics) {
       for (const t of analysis.importantTopics) {
         // Look for existing topic using PostgreSQL case-insensitive iLike matching
-        let existingTopic = await Topic.findOne({
-          where: {
-            name: { [Op.iLike]: t.topicName.trim() },
-            subject: subjectId,
-            user: req.user.id,
-          },
-        });
+        let existingTopic;
+        try {
+          existingTopic = await Topic.findOne({
+            where: {
+              name: { [Op.iLike]: t.topicName.trim() },
+              subject: subjectId,
+              user: req.user.id,
+            },
+          });
+        } catch (dbErr) {
+          const userTopics = await Topic.findAll({ where: { subject: subjectId, user: req.user.id } });
+          existingTopic = userTopics.find((tp) => tp.name.trim().toLowerCase() === t.topicName.trim().toLowerCase());
+        }
 
         const calculatedStatus =
           t.importance === 'High' ? 'Medium' : t.importance === 'Medium' ? 'Medium' : 'Weak';

@@ -77,10 +77,12 @@ exports.getNotes = async (req, res, next) => {
     if (category) where.category = category;
 
     if (search) {
+      const searchOp = Op.iLike || Op.like;
+      const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
       const searchCondition = {
         [Op.or]: [
-          { title: { [Op.iLike]: `%${search}%` } },
-          { content: { [Op.iLike]: `%${search}%` } },
+          { title: { [searchOp]: `%${sanitizedSearch}%` } },
+          { content: { [searchOp]: `%${sanitizedSearch}%` } },
         ],
       };
 

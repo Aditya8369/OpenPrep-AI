@@ -55,12 +55,18 @@ exports.generateAIPlan = async (req, res, next) => {
       const tasks = [];
       for (const t of day.tasks) {
         // Try finding matching Topic using case-insensitive PostgreSQL iLike matching
-        const matchedTopic = await Topic.findOne({
-          where: {
-            name: { [Op.iLike]: t.topicName.trim() },
-            user: req.user.id,
-          },
-        });
+        let matchedTopic;
+        try {
+          matchedTopic = await Topic.findOne({
+            where: {
+              name: { [Op.iLike]: t.topicName.trim() },
+              user: req.user.id,
+            },
+          });
+        } catch (dbErr) {
+          const userTopics = await Topic.findAll({ where: { user: req.user.id } });
+          matchedTopic = userTopics.find((tp) => tp.name.trim().toLowerCase() === t.topicName.trim().toLowerCase());
+        }
 
         tasks.push({
           _id: uuidv4(), // Assign a stable UUID virtual _id to mimic Mongoose subdocument id

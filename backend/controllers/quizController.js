@@ -174,7 +174,7 @@ exports.submitQuizAttempt = async (req, res, next) => {
     // Evaluate answers
     let correctCount = 0;
     const evaluatedAnswers = questionsList.map((q) => {
-      const userAns = answers.find((ans) => ans.questionId === q._id || ans.questionId === q.id);
+      const userAns = answers.find((ans) => String(ans.questionId) === String(q._id || q.id));
       const selected = userAns && userAns.selectedAnswer !== undefined ? userAns.selectedAnswer : -1;
       const isCorrect = selected === q.correctAnswer;
       if (isCorrect) correctCount++;

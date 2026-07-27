@@ -2,9 +2,6 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { RATE_LIMIT } = require('../config/constants');
 
-const { RATE_LIMIT } = require('../config/constants');
-
-
 const {
   register,
   login,
@@ -35,9 +32,6 @@ const shouldSkip = () =>
   process.env.NODE_ENV === 'test' &&
   process.env.ENABLE_RATE_LIMIT_TESTS !== 'true';
 
-// Skip rate limiting in the test environment
-const shouldSkip = () => process.env.NODE_ENV === 'test';
-
 
 // Shared helper for consistent rate limit responses
 const createRateLimitResponse = (errorMessage) => ({
@@ -50,16 +44,9 @@ const loginLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOWS.FIFTEEN_MINUTES,
   max: RATE_LIMIT.MAX_REQUESTS.LOGIN,
   skip: shouldSkip,
-
-  message: {
-    success: false,
-    error: 'Too many login attempts. Please try again after 15 minutes.',
-  },
-
   message: createRateLimitResponse(
     'Too many login attempts. Please try again after 15 minutes.'
   ),
-
   standardHeaders: true,
   legacyHeaders: true,
 });
@@ -69,16 +56,9 @@ const registerLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOWS.FIFTEEN_MINUTES,
   max: RATE_LIMIT.MAX_REQUESTS.REGISTER,
   skip: shouldSkip,
-
-  message: {
-    success: false,
-    error: 'Too many registration attempts. Please try again after 15 minutes.',
-  },
-
   message: createRateLimitResponse(
     'Too many registration attempts. Please try again after 15 minutes.'
   ),
-
   standardHeaders: true,
   legacyHeaders: true,
 });
@@ -88,16 +68,9 @@ const forgotPasswordLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOWS.ONE_HOUR,
   max: RATE_LIMIT.MAX_REQUESTS.FORGOT_PASSWORD,
   skip: shouldSkip,
-
-  message: {
-    success: false,
-    error: 'Too many password reset requests. Please try again after an hour.',
-  },
-
   message: createRateLimitResponse(
     'Too many password reset requests. Please try again after an hour.'
   ),
-
   standardHeaders: true,
   legacyHeaders: true,
 });
@@ -114,40 +87,12 @@ const resetPasswordLimiter = rateLimit({
 });
 
 // Refresh token rate limiter: 10 attempts per 15 minutes per IP
-
-// Limit refresh token requests to 10 per 15 minutes per IP
-
 const refreshTokenLimiter = rateLimit({
   windowMs: RATE_LIMIT.WINDOWS.FIFTEEN_MINUTES,
   max: RATE_LIMIT.MAX_REQUESTS.REFRESH_TOKEN,
-
-  skip: shouldSkip,
-
-  message: {
-    success: false,
-    error: 'Too many refresh requests. Please try again later.',
-  },
-
-  message: createRateLimitResponse(
-    'Too many refresh requests. Please try again later.'
-  ),
-
-  standardHeaders: true,
-  legacyHeaders: true,
-});
-
-// Email verification rate limiter: 5 attempts per 15 minutes per IP
-const verifyEmailLimiter = rateLimit({
-  windowMs: RATE_LIMIT.WINDOWS.FIFTEEN_MINUTES,
-  max: RATE_LIMIT.MAX_REQUESTS.VERIFY_EMAIL,
-  skip: shouldSkip,
-  message: createRateLimitResponse(
-    'Too many email verification attempts. Please try again after 15 minutes.'
-
   skip: shouldSkip,
   message: createRateLimitResponse(
     'Too many refresh requests. Please try again later.'
-
   ),
   standardHeaders: true,
   legacyHeaders: true,

@@ -6,6 +6,29 @@ const PomodoroTimer = () => {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
 
+  const [isCompleted, setIsCompleted] = useState(false);
+
+  const playChime = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch {
+      // Audio context fallback if blocked by browser policy
+    }
+  };
+
   useEffect(() => {
     let interval = null;
     if (isActive) {
@@ -13,6 +36,8 @@ const PomodoroTimer = () => {
         setTimeLeft((time) => {
           if (time <= 1) {
             setIsActive(false);
+            setIsCompleted(true);
+            playChime();
             return 0;
           }
           return time - 1;
@@ -22,9 +47,13 @@ const PomodoroTimer = () => {
     return () => clearInterval(interval);
   }, [isActive]);
 
-  const toggleTimer = () => setIsActive(!isActive);
+  const toggleTimer = () => {
+    if (isCompleted) setIsCompleted(false);
+    setIsActive(!isActive);
+  };
   const resetTimer = () => {
     setIsActive(false);
+    setIsCompleted(false);
     setTimeLeft(25 * 60);
   };
 
@@ -50,7 +79,9 @@ const PomodoroTimer = () => {
         <h3 className="font-playfair font-bold text-4xl text-neutral-900 dark:text-white tracking-wider">
           {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
         </h3>
-        <p className="text-xs text-neutral-500 font-bold tracking-widest mt-1 uppercase">Focus</p>
+        <p className="text-xs text-neutral-500 font-bold tracking-widest mt-1 uppercase">
+          {isCompleted ? 'Break Time!' : 'Focus'}
+        </p>
 
         {/* Controls */}
         <div className="flex space-x-4 mt-4 z-10">

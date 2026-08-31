@@ -431,6 +431,7 @@ app.use('/api/pyq', (req, res) => {
 });
 app.use('/api/community', communityRoutes);
 app.use('/api/circuits', require('./routes/circuitRoutes'));
+app.use('/api/mindmap', require('./routes/biDirectionalMindMapRoutes'));
 app.use('/api/language', require('./routes/languageRoutes'));
 app.use('/api/squads', squadRoutes);
 app.use('/api/study', fatigueRoutes);

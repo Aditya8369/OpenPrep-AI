@@ -33,6 +33,7 @@ const { aiLimiter } = require('../middleware/rateLimiter');
 const { checkQuota } = require('../middleware/quotaMiddleware');
 const flashcardUpload = require('../middleware/flashcardUpload');
 const audioFlashcardUpload = require('../middleware/audioFlashcardUpload');
+const { exportDeckToAnki, importDeckFromAnki } = require('../controllers/ankiController');
 const {
 validateGenerateAIFlashcards,
   validateGenerateFlashcardsFromNote,
@@ -913,6 +914,12 @@ router.post('/batch-sync', protect, batchSyncOfflineReviews);
 router.post('/sync-batch', protect, batchSyncOfflineReviews);
 router.get('/podcasts/:id', protect, getPodcastEpisodeById);
 router.post('/:deckId/generate-podcast', protect, generateDeckPodcast);
+
+// Anki (.apkg) Spaced Repetition Exporter & Importer
+router.get('/deck/:id/export/anki', protect, exportDeckToAnki);
+router.get('/export/:deckId/anki', protect, exportDeckToAnki);
+router.post('/import/anki', protect, flashcardUpload.single('file'), importDeckFromAnki);
+router.post('/deck/:id/import/anki', protect, flashcardUpload.single('file'), importDeckFromAnki);
 
 router.delete('/:id', protect, deleteFlashcard);
 

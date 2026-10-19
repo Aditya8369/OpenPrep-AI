@@ -276,4 +276,13 @@ router.get('/me/export', protect, exportLimiter, exportAccountData);
  */
 router.delete('/me', protect, deleteAccountLimiter, deleteAccount);
 
+// Multi-Channel External Notification Integrations (Discord Webhook & Telegram Bot)
+const {
+  updateNotificationIntegrations,
+  testNotificationIntegration,
+} = require('../controllers/notificationIntegrationController');
+
+router.put('/notifications/integrations', protect, updateNotificationIntegrations);
+router.post('/notifications/integrations/test', protect, testNotificationIntegration);
+
 module.exports = router;

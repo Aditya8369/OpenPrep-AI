@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import LazyImage from '../common/LazyImage';
-import { api } from '../../utils/api';
-import { toast } from 'react-toastify';
+import api from '../../services/api';
 import { Target, Bell, Zap, Calendar, Activity } from 'lucide-react';
 import { io } from 'socket.io-client';
+
+const toast = {
+  info: (msg) => console.info(msg),
+  error: (msg) => console.error(msg),
+  success: (msg) => console.log(msg),
+  warning: (msg) => console.warn(msg)
+};
 
 export default function SquadHabitGrid({ squadId, currentUserId }) {
   const [data, setData] = useState(null);

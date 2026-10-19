@@ -682,6 +682,7 @@ try {
 global.io = io;
 // Initialize socket handlers
 require('./sockets/battleHandler')(io);
+require('./sockets/quizBattleSocket')(io);
 require('./sockets/chatHandler')(io);
 require('./sockets/e2eeChatHandler')(io);
 require('./sockets/crdtHandler')(io);

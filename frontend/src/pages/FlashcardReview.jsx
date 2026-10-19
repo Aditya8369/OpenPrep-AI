@@ -29,6 +29,7 @@ import KeyboardShortcutsModal from '../components/flashcards/KeyboardShortcutsMo
 import PomodoroTimer from '../components/dashboard/PomodoroTimer';
 import MobileBottomSheet from '../components/common/MobileBottomSheet';
 import offlineSyncService from '../services/offlineSyncService';
+import soundService from '../services/soundService';
 const STORAGE_KEY = 'flashcardReviewSession';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -270,6 +271,7 @@ const [isVoiceAnswerListening, setIsVoiceAnswerListening] = useState(false);
       return;
     }
     lastFlipTimeRef.current = now;
+    soundService.playFlipSound();
     setIsFlipped((prev) => !prev);
   }, []);
 
@@ -316,6 +318,12 @@ const [isVoiceAnswerListening, setIsVoiceAnswerListening] = useState(false);
       setCurrentIndex(nextIndex);
       setIsFlipped(false);
       persistSession({ cards, currentIndex: nextIndex, sessionStats: nextStats, failedCards: failedCardsRef.current });
+
+      if (nextIndex >= cards.length) {
+        soundService.playStreakFanfare();
+      } else if (quality >= 4) {
+        soundService.playSuccessChime();
+      }
     } catch (err) {
       if (!isMountedRef.current) return;
       console.error("Failed to update flashcard", err);

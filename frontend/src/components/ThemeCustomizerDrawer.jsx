@@ -254,6 +254,7 @@ const ThemeCustomizerDrawer = ({ isOpen, onClose }) => {
                         {p.name}
                       </span>
                     </button>
+                  ))}
                 </div>
               </div>
 

@@ -156,6 +156,8 @@ export const ThemeProvider = ({ children }) => {
       }
       return updated;
     });
+  };
+
   const setColorblindFilter = (mode) => {
     setColorblindFilterState(mode);
     if (typeof window !== 'undefined') {

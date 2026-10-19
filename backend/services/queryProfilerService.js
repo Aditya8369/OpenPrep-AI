@@ -1,5 +1,10 @@
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const {
+  extractFilterColumns,
+  collectCandidateScans,
+  recommendIndexes,
+} = require('./indexAdvisorService');
 
 /**
  * Query Telemetry / Slow Query Store (#2193).

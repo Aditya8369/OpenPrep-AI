@@ -58,7 +58,7 @@ const DocumentProcessingStage = sequelize.define(
       comment: 'Input data for this stage',
     },
     output: {
-      type: DataTypes.LONGTEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: true,
       comment: 'Result/output from this stage',
     },

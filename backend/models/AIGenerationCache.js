@@ -38,7 +38,7 @@ const AIGenerationCache = sequelize.define(
       comment: 'Fingerprint components for validation',
     },
     generatedResult: {
-      type: DataTypes.LONGTEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: false,
       comment: 'Complete generated output',
     },

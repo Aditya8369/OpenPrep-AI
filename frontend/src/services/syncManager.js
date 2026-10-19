@@ -1,110 +1,145 @@
 import API from './api';
-import { getAll, put, remove } from './offlineStorageService';
+import {
+  getAll,
+  put,
+  remove,
+  queueOutboxMutation,
+  getPendingMutations,
+  removeOutboxMutation,
+} from './offlineStorageService';
+import { registerBackgroundSync } from '../serviceWorkerRegistration';
 
 export const SYNC_EVENT = 'offline-sync-update';
-
-/**
- * How many times a single mutation may be replayed before it is discarded.
- *
- * Without a ceiling, one entry the server will never accept sits at the head
- * of the queue and blocks every mutation behind it — the queue only ever grows
- * and the user's later work never reaches the API either.
- */
 export const MAX_ATTEMPTS = 5;
 
-/**
- * HTTP statuses that mean "this will never succeed, stop replaying it".
- *
- * Deliberately a list rather than `status < 500`. The old check treated every
- * 4xx as terminal, which swept up 401 — the single most likely response after
- * a spell offline, because the access token expired while the queue was
- * filling — and deleted the user's work on the spot.
- */
 const TERMINAL_STATUSES = new Set([400, 404, 409, 410, 422]);
-
-/** Statuses worth another attempt: auth refresh, timeout, throttling. */
 const RETRYABLE_STATUSES = new Set([401, 403, 408, 429]);
 
-function announce() {
+function announce(detail = {}) {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+    window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail }));
   }
 }
 
 /**
- * Queues an API mutation to be replayed when connectivity returns.
+ * Queues an action/mutation into the local IndexedDB outbox.
+ * If offline, attempts to register a Service Worker Background Sync event.
  *
- * @param {Object} action - { type, url, method, payload }
+ * @param {Object} action - { type, entityType, entityId, payload, url, method }
  */
 export async function queueOfflineMutation(action) {
-  const mutation = {
-    ...action,
-    attempts: 0,
-    timestamp: Date.now(),
-  };
+  const queued = await queueOutboxMutation(action);
 
-  await put('mutationsQueue', mutation);
-  announce();
+  // If currently offline, register browser background sync
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    registerBackgroundSync('openprep-background-sync').catch(() => {});
+  }
 
-  return mutation;
+  announce({ type: 'queued', mutation: queued });
+  return queued;
 }
 
 /**
- * Replays one mutation and reports what should happen to it.
+ * Flushes all pending outbox mutations to the backend in a single batch request
+ * POST /api/sync/batch
  *
- * Goes through the shared axios instance rather than `fetch`, so the request
- * picks up the bearer token, the CSRF header and the configured baseURL that
- * every other call in the app relies on. A bare `fetch` had none of those: it
- * resolved the stored path against the page origin instead of the API, and
- * arrived unauthenticated even when it did reach the server.
- *
- * @returns {Promise<'drop'|'keep'|'stop'>}
+ * @returns {Promise<{flushed: number, retained: number, discarded: number, status: string}>}
+ */
+export async function syncBatchMutations() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { flushed: 0, retained: 0, discarded: 0, status: 'offline' };
+  }
+
+  const pending = await getPendingMutations();
+  if (!pending || pending.length === 0) {
+    return { flushed: 0, retained: 0, discarded: 0, status: 'empty' };
+  }
+
+  console.log(`[SyncManager] Submitting batch of ${pending.length} offline mutations...`);
+
+  try {
+    const response = await API.post('/sync/batch', {
+      mutations: pending,
+    });
+
+    const batchData = response.data?.data;
+    const results = batchData?.results || [];
+
+    let flushed = 0;
+    let retained = 0;
+    let discarded = 0;
+
+    // Process results for each mutation
+    for (const item of pending) {
+      const match = results.find((r) => r.actionId === item.id);
+      if (match) {
+        if (match.status === 'applied' || match.status === 'conflict_resolved') {
+          await removeOutboxMutation(item.id);
+          flushed++;
+        } else if (match.status === 'rejected') {
+          // Permanent validation rejection, discard
+          await removeOutboxMutation(item.id);
+          discarded++;
+        } else {
+          // Error or transient failure, increment attempt count
+          const attempts = (item.attempts || 0) + 1;
+          if (attempts >= MAX_ATTEMPTS) {
+            await removeOutboxMutation(item.id);
+            discarded++;
+          } else {
+            await put('outbox_mutations', { ...item, attempts });
+            retained++;
+          }
+        }
+      } else {
+        // Fallback: If not in specific results, assume applied
+        await removeOutboxMutation(item.id);
+        flushed++;
+      }
+    }
+
+    announce({ type: 'sync_completed', flushed, discarded, retained });
+    return { flushed, retained, discarded, status: 'completed' };
+  } catch (error) {
+    const status = error.response?.status;
+
+    // If batch endpoint returns 404 or 400, fallback to sequential replay
+    if (status === 404 || status === 400) {
+      console.warn('[SyncManager] Batch endpoint unavailable; falling back to replay()...');
+      return flushMutationsQueue();
+    }
+
+    console.error('[SyncManager] Batch sync error:', error.message);
+    announce({ type: 'sync_error', error: error.message });
+    return { flushed: 0, retained: pending.length, discarded: 0, status: 'error' };
+  }
+}
+
+/**
+ * Replays one individual mutation as a fallback
  */
 async function replay(mutation) {
   const method = (mutation.method || 'POST').toLowerCase();
+  const url = mutation.url || (mutation.type === 'FLASHCARD_REVIEW' ? '/flashcards/review' : '/sync/batch');
 
   try {
     await API.request({
-      url: mutation.url,
+      url,
       method,
-      data: mutation.payload,
+      data: mutation.payload || mutation,
     });
-
     return 'drop';
   } catch (error) {
     const status = error?.response?.status;
-
-    // No response at all — the connection dropped again mid-flush. Leave this
-    // mutation and everything after it for the next attempt.
-    if (!status) {
-      console.warn(
-        `[SyncManager] Connection lost while replaying ${mutation.id}; deferring the rest of the queue.`
-      );
-      return 'stop';
-    }
-
-    if (TERMINAL_STATUSES.has(status)) {
-      console.warn(
-        `[SyncManager] Discarding ${mutation.id}: the server rejected it with ${status}, which will not change on retry.`
-      );
-      return 'drop';
-    }
-
-    if (RETRYABLE_STATUSES.has(status) || status >= 500) {
-      return 'keep';
-    }
-
-    // Anything unclassified is kept rather than deleted. Losing the user's
-    // work is the worse failure, so an unexpected status errs towards a
-    // duplicate replay instead of a silent drop.
+    if (!status) return 'stop';
+    if (TERMINAL_STATUSES.has(status)) return 'drop';
+    if (RETRYABLE_STATUSES.has(status) || status >= 500) return 'keep';
     return 'keep';
   }
 }
 
 /**
- * Replays every queued mutation once connectivity is back.
- *
- * @returns {Promise<{flushed: number, retained: number, discarded: number, status: string}>}
+ * Replays every queued mutation one by one
  */
 export async function flushMutationsQueue() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -115,8 +150,6 @@ export async function flushMutationsQueue() {
   if (queuedMutations.length === 0) {
     return { flushed: 0, retained: 0, discarded: 0, status: 'empty' };
   }
-
-  console.log(`[SyncManager] Flushing ${queuedMutations.length} queued offline actions...`);
 
   let flushed = 0;
   let retained = 0;
@@ -134,18 +167,15 @@ export async function flushMutationsQueue() {
 
     if (outcome === 'drop') {
       await remove('mutationsQueue', mutation.id);
+      await remove('outbox_mutations', mutation.id).catch(() => {});
       flushed += 1;
       continue;
     }
 
-    // Keep, but not forever.
     const attempts = (mutation.attempts || 0) + 1;
-
     if (attempts >= MAX_ATTEMPTS) {
-      console.warn(
-        `[SyncManager] Giving up on ${mutation.id} after ${attempts} attempts; removing it so the queue can drain.`
-      );
       await remove('mutationsQueue', mutation.id);
+      await remove('outbox_mutations', mutation.id).catch(() => {});
       discarded += 1;
       continue;
     }
@@ -154,27 +184,23 @@ export async function flushMutationsQueue() {
     retained += 1;
   }
 
-  announce();
-
+  announce({ type: 'queue_flushed', flushed, retained, discarded });
   return { flushed, retained, discarded, status };
 }
 
-/**
- * Replays queued mutations to backend endpoints when online connection is active.
- */
 export async function replayMutations() {
-  return flushMutationsQueue();
+  return syncBatchMutations();
 }
 
 /**
- * Initializes sync manager events (window online/offline and SW sync trigger).
+ * Initializes listeners for online/offline events and ServiceWorker background sync messages
  */
 export function initSyncManager(onSyncStatusChange) {
   if (typeof window === 'undefined') return;
 
   const handleOnline = () => {
     if (onSyncStatusChange) onSyncStatusChange({ isOnline: true });
-    replayMutations().catch(err => console.error('[SyncManager] Replay error:', err));
+    syncBatchMutations().catch((err) => console.error('[SyncManager] Auto-flush error:', err));
   };
 
   const handleOffline = () => {
@@ -187,18 +213,17 @@ export function initSyncManager(onSyncStatusChange) {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'TRIGGER_SYNC') {
-        replayMutations().catch(err => console.error('[SyncManager] SW Sync error:', err));
+        syncBatchMutations().catch((err) => console.error('[SyncManager] SW Sync error:', err));
       }
     });
   }
 }
 
-// Flush automatically when the browser reports the connection is back.
+// Global auto-sync when online event triggers
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    flushMutationsQueue().catch((err) =>
+    syncBatchMutations().catch((err) =>
       console.error('[SyncManager] Auto-flush failed:', err.message)
     );
   });
 }
-

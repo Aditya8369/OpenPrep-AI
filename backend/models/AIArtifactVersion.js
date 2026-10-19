@@ -34,7 +34,7 @@ const AIArtifactVersion = sequelize.define(
       comment: 'The exact input passed to the AI model',
     },
     rawResponse: {
-      type: DataTypes.LONGTEXT,
+      type: DataTypes.TEXT('long'),
       allowNull: false,
       comment: 'Complete response from Gemini API',
     },

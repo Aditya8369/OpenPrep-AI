@@ -478,6 +478,7 @@ app.put('/api/user/notifications/settings', protect, require('./controllers/user
 app.get('/api/user/dashboard', protect, require('./controllers/userController').getDashboardLayout);
 app.post('/api/user/dashboard', protect, require('./controllers/userController').updateDashboardLayout);
 app.use('/api/ai', aiRoutes);
+app.use('/api/sync', require('./routes/syncRoutes'));
 app.use('/api/quiz-battles', quizBattleRoutes);
 app.use('/api/adaptive-exams', adaptiveExamRoutes);
 app.use('/api/quizzes/diagram-hotspot', diagramQuestionRoutes);

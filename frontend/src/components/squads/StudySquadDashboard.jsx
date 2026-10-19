@@ -261,4 +261,3 @@ export default function StudySquadDashboard({ squadData, currentUserRole, onLeav
     </div>
   );
 }
-}

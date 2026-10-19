@@ -1,14 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const crdtMiddleware = require('../middleware/crdtMiddleware');
+const syncController = require('../controllers/syncController');
+const { protect } = require('../middleware/auth');
 
-// Mock a note resource endpoint that handles sync conflicts
-router.post('/sync/notes', crdtMiddleware, (req, res) => {
-  // If the request made it past the middleware, it was merged/accepted
-  res.status(200).json({ 
-    message: 'Sync successful', 
-    mergedData: req.body // MVP returns what was sent
-  });
-});
+/**
+ * @swagger
+ * /api/sync/batch:
+ *   post:
+ *     summary: Process batch of offline queued mutations with LWW conflict resolution
+ *     tags: [Sync]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/batch', protect, syncController.processBatchSync);
 
 module.exports = router;

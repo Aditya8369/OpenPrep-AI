@@ -57,3 +57,8 @@ backups/
 backend/backups/
 *.sql.gz
 
+# Local dev & tooling cache
+.freebuff/
+bundle-stats.html
+*test_output*.txt
+

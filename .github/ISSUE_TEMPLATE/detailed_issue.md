@@ -2,7 +2,7 @@
 name: Detailed Issue
 about: Comprehensive issue template for planning features, bugs, and enhancements
 title: '[Issue]: '
-labels: 'ECSoC26'
+labels: 'NSoC'
 assignees: ''
 ---
 
@@ -90,15 +90,15 @@ So that [benefit]
 
 Select if this issue is part of an open-source program:
 
-- [ ] Elite Summer of Code (ECSoC26)
+- [ ] NSoC
 
-## Difficulty Level (ECSoC26)
+## Difficulty Level (NSoC)
 
 Select the difficulty level for this issue:
 
-- [ ] Level 1 (Easy / Beginner-friendly) (ECSoC26-L1)
-- [ ] Level 2 (Medium / Intermediate) (ECSoC26-L2)
-- [ ] Level 3 (Hard / Advanced) (ECSoC26-L3)
+- [ ] Level 1 (Easy / Beginner-friendly) (NSoC-L1)
+- [ ] Level 2 (Medium / Intermediate) (NSoC-L2)
+- [ ] Level 3 (Hard / Advanced) (NSoC-L3)
 
 ## Definition of Done
 

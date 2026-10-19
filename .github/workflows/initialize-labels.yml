@@ -19,7 +19,14 @@ jobs:
         with:
           script: |
             const labels = [
-              // ECSoC26 (Elite Summer of Code 2026)
+              // NSoC (National Summer of Code)
+              { name: 'NSoC', color: 'F9D0C4', description: 'NSoC contributions' },
+              { name: 'NSoC-Approved', color: '80553B', description: 'Approved for NSoC' },
+              { name: 'NSoC-L1', color: 'EDEDED', description: 'Level 1 (Easy / Beginner-friendly) NSoC task' },
+              { name: 'NSoC-L2', color: 'D640C6', description: 'Level 2 (Medium / Intermediate) NSoC task' },
+              { name: 'NSoC-L3', color: 'b60205', description: 'Level 3 (Hard / Advanced) NSoC task' },
+
+              // ECSoC26 (Elite Summer of Code 2026 - legacy)
               { name: 'ECSoC26', color: 'F9D0C4', description: 'Elite Summer of Code 2026 contributions' },
               { name: 'ECSoC26-Approved', color: '80553B', description: 'Approved for Elite Summer of Code 2026' },
               { name: 'ECSoC26-L1', color: 'EDEDED', description: 'Level 1 (Easy / Beginner-friendly) ECSoC26 task' },

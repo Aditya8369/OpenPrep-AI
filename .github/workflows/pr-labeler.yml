@@ -34,7 +34,7 @@ jobs:
             const issueMatches = [...body.matchAll(/(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)/gi)];
             const issueNumbers = issueMatches.map(match => parseInt(match[1], 10));
 
-            const prLabels = [];
+            const prLabels = ['NSoC'];
 
             if (issueNumbers.length > 0) {
               console.log(`Found linked issues in PR body: ${issueNumbers.join(', ')}`);
@@ -46,11 +46,16 @@ jobs:
                     issue_number: issueNum
                   });
                   
-                  const targetLabels = ['ECSoC26', 'ECSoC26-L1', 'ECSoC26-L2', 'ECSoC26-L3', 'ECSoC26-Approved', 'good first issue', 'beginner friendly'];
+                  const targetLabels = ['NSoC', 'NSoC-L1', 'NSoC-L2', 'NSoC-L3', 'NSoC-Approved', 'ECSoC26', 'ECSoC26-L1', 'ECSoC26-L2', 'ECSoC26-L3', 'ECSoC26-Approved', 'good first issue', 'beginner friendly'];
                   for (const label of issue.labels) {
                     const labelName = typeof label === 'string' ? label : label.name;
                     if (targetLabels.includes(labelName)) {
-                      prLabels.push(labelName);
+                      if (labelName === 'ECSoC26') prLabels.push('NSoC');
+                      else if (labelName === 'ECSoC26-L1') prLabels.push('NSoC-L1');
+                      else if (labelName === 'ECSoC26-L2') prLabels.push('NSoC-L2');
+                      else if (labelName === 'ECSoC26-L3') prLabels.push('NSoC-L3');
+                      else if (labelName === 'ECSoC26-Approved') prLabels.push('NSoC-Approved');
+                      else prLabels.push(labelName);
                     }
                   }
                 } catch (e) {
@@ -61,29 +66,27 @@ jobs:
               console.log('No linked issues found in PR body.');
             }
 
-            // Auto-fallback: if PR only changes documentation, mark as ECSoC26-L1 and ECSoC26
-            if (prLabels.length === 0) {
-              try {
-                const { data: files } = await github.rest.pulls.listFiles({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  per_page: 100
-                });
-                
-                const docsOnly = files.every(f => 
-                  f.filename.startsWith('docs/') || 
-                  f.filename.endsWith('.md') || 
-                  f.filename.startsWith('.github/')
-                );
-                
-                if (docsOnly && files.length > 0) {
-                  console.log('PR contains only documentation files. Auto-applying ECSoC26-L1.');
-                  prLabels.push('ECSoC26', 'ECSoC26-L1');
-                }
-              } catch (e) {
-                console.log('Failed to check PR changed files:', e.message);
+            // Auto-fallback: if PR only changes documentation, mark as NSoC-L1 and NSoC
+            try {
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100
+              });
+              
+              const docsOnly = files.every(f => 
+                f.filename.startsWith('docs/') || 
+                f.filename.endsWith('.md') || 
+                f.filename.startsWith('.github/')
+              );
+              
+              if (docsOnly && files.length > 0) {
+                console.log('PR contains only documentation files. Auto-applying NSoC-L1.');
+                prLabels.push('NSoC', 'NSoC-L1');
               }
+            } catch (e) {
+              console.log('Failed to check PR changed files:', e.message);
             }
 
             if (prLabels.length > 0) {
@@ -103,6 +106,9 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           EXISTING=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json labels --jq '.labels[].name')
+          if ! echo "$EXISTING" | grep -qx "NSoC"; then
+            gh pr edit "$PR_NUMBER" --repo "$REPOSITORY" --add-label "NSoC"
+          fi
           if ! echo "$EXISTING" | grep -qx "ready-for-review"; then
             gh pr edit "$PR_NUMBER" --repo "$REPOSITORY" --add-label "ready-for-review"
           fi

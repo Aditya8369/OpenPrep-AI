@@ -20,7 +20,7 @@ jobs:
             const body = context.payload.issue.body || '';
             const title = context.payload.issue.title || '';
             const num = context.issue.number;
-            const labels = ['ECSoC26'];
+            const labels = ['NSoC'];
 
             const upper = title.toUpperCase();
             if (upper.includes('[BUG]')) labels.push('bug');
@@ -38,10 +38,18 @@ jobs:
               'PYQ Analysis': 'pyq-analysis',
               'Study Planner': 'study-planner',
               'Dashboard': 'dashboard',
-              'Elite Summer of Code (esoc)': 'ECSoC26',
-              'Level 1 (Easy / Beginner-friendly) (esoc-l1)': 'ECSoC26-L1',
-              'Level 2 (Medium / Intermediate) (esoc-l2)': 'ECSoC26-L2',
-              'Level 3 (Hard / Advanced) (esoc-l3)': 'ECSoC26-L3'
+              'NSoC': 'NSoC',
+              'Level 1 (Easy / Beginner-friendly) (NSoC-L1)': 'NSoC-L1',
+              'Level 2 (Medium / Intermediate) (NSoC-L2)': 'NSoC-L2',
+              'Level 3 (Hard / Advanced) (NSoC-L3)': 'NSoC-L3',
+              'Elite Summer of Code (esoc)': 'NSoC',
+              'Elite Summer of Code (ECSoC26)': 'NSoC',
+              'Level 1 (Easy / Beginner-friendly) (esoc-l1)': 'NSoC-L1',
+              'Level 2 (Medium / Intermediate) (esoc-l2)': 'NSoC-L2',
+              'Level 3 (Hard / Advanced) (esoc-l3)': 'NSoC-L3',
+              'Level 1 (Easy / Beginner-friendly) (ECSoC26-L1)': 'NSoC-L1',
+              'Level 2 (Medium / Intermediate) (ECSoC26-L2)': 'NSoC-L2',
+              'Level 3 (Hard / Advanced) (ECSoC26-L3)': 'NSoC-L3'
             };
 
             for (const [area, label] of Object.entries(areaMap)) {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
 import ChapterWeightageChart from '../components/pyq/ChapterWeightageChart';
 import TopicHeatmap from '../components/pyq/TopicHeatmap';
+import SyllabusSunburstChart from '../components/analytics/SyllabusSunburstChart';
 import PYQUploadModal from '../components/pyq/PYQUploadModal';
 import CustomQuizModal from '../components/pyq/CustomQuizModal';
 import {
@@ -306,6 +307,11 @@ const PYQAnalytics = () => {
                 />
                 <TopicHeatmap questions={selectedAnalysis.questions || []} />
               </div>
+
+              {/* Interactive Syllabus Mastery Sunburst Chart & PYQ Chapter Weightage Explorer */}
+              <SyllabusSunburstChart
+                onSelectTopic={(topic) => setClickedChapter(topic.name)}
+              />
 
               {/* Clicked Chapter Popup Alert */}
               <AnimatePresence>

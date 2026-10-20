@@ -22,6 +22,8 @@ const {
   generateClozeFlashcards,
   generateDeckPodcast,
   getPodcastEpisodeById,
+  deduplicateDeck,
+  mergeDuplicateCards,
 } = require('../controllers/flashcardController');
 const {
   getLeitnerDistribution,
@@ -913,6 +915,10 @@ router.post('/batch-sync', protect, batchSyncOfflineReviews);
 router.post('/sync-batch', protect, batchSyncOfflineReviews);
 router.get('/podcasts/:id', protect, getPodcastEpisodeById);
 router.post('/:deckId/generate-podcast', protect, generateDeckPodcast);
+
+// Vector Deduplication & Similarity Merging
+router.post('/deck/:id/deduplicate', protect, deduplicateDeck);
+router.post('/deck/:id/merge', protect, mergeDuplicateCards);
 
 router.delete('/:id', protect, deleteFlashcard);
 

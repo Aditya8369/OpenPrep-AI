@@ -1671,9 +1671,91 @@ exports.getPodcastEpisodeById = async (req, res, next) => {
   }
 };
 
-// @desc    Generate AI flashcards from YouTube lecture video transcript
-// @route   POST /api/flashcards/generate-from-youtube, POST /api/flashcards/from-youtube
-// @access  Private
 const { generateFromYoutube: youtubeGen } = require('./youtubeFlashcardController');
 exports.generateFlashcardsFromYouTube = youtubeGen;
+
+const cardDeduplicationService = require('../services/cardDeduplicationService');
+
+// @desc    Scan deck for semantically duplicate flashcards
+// @route   POST /api/flashcards/deck/:id/deduplicate
+// @access  Private
+exports.deduplicateDeck = async (req, res, next) => {
+  try {
+    const deckId = req.params.id;
+    const cards = await Flashcard.findAll({
+      where: {
+        ...(deckId && deckId !== 'all' ? { deckId } : {}),
+        user: req.user.id,
+      },
+    });
+
+    if (!cards || cards.length < 2) {
+      return res.status(200).json({
+        success: true,
+        message: 'Insufficient cards to deduplicate (need at least 2 cards)',
+        count: 0,
+        duplicates: [],
+      });
+    }
+
+    const duplicates = await cardDeduplicationService.findDuplicateClusters(cards);
+
+    return res.status(200).json({
+      success: true,
+      count: duplicates.length,
+      duplicates,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Merge duplicate card into canonical card
+// @route   POST /api/flashcards/deck/:id/merge
+// @access  Private
+exports.mergeDuplicateCards = async (req, res, next) => {
+  try {
+    const { canonicalCardId, duplicateCardId } = req.body;
+    if (!canonicalCardId || !duplicateCardId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Both canonicalCardId and duplicateCardId are required for merge',
+      });
+    }
+
+    const canonical = await Flashcard.findOne({
+      where: { id: canonicalCardId, user: req.user.id },
+    });
+    const duplicate = await Flashcard.findOne({
+      where: { id: duplicateCardId, user: req.user.id },
+    });
+
+    if (!canonical || !duplicate) {
+      return res.status(404).json({
+        success: false,
+        error: 'One or both flashcards not found or not owned by user',
+      });
+    }
+
+    const mergedData = cardDeduplicationService.mergeCardPair(canonical.toJSON(), duplicate.toJSON());
+
+    canonical.back = mergedData.back;
+    canonical.hint = mergedData.hint;
+    canonical.tags = mergedData.tags;
+    canonical.interval = mergedData.interval;
+    canonical.repetitions = mergedData.repetitions;
+    canonical.efactor = mergedData.efactor;
+    await canonical.save();
+
+    await duplicate.destroy();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Flashcards merged successfully',
+      data: canonical,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 

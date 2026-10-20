@@ -1,5 +1,6 @@
 const geminiService = require('../services/geminiService');
 const { GeminiRateLimitError, GeminiServerError } = require('../services/geminiService');
+const diagramOcrService = require('../services/diagramOcrService');
 const llmService = require('../utils/llmService');
 const { ContextIsolationError } = require('../utils/aiContextIsolation');
 const Question = require('../models/Question');
@@ -121,6 +122,53 @@ exports.solveImageQuestion = async (req, res, next) => {
       return res.status(503).json({
         success: false,
         error: error.message,
+      });
+    }
+    next(error);
+  }
+};
+
+// @desc    Solve math / science diagram OCR with interactive KaTeX derivations
+// @route   POST /api/ai/solve-diagram
+// @access  Private
+exports.solveDiagram = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please upload an image file (JPG, PNG, WEBP).',
+      });
+    }
+
+    const { subjectHint } = req.body;
+    const solution = await diagramOcrService.solveDiagram({
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+      subjectHint: subjectHint || '',
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: solution,
+    });
+  } catch (error) {
+    if (error.name === 'InvalidImageError') {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+    if (error.name === 'NonMathImageError') {
+      return res.status(422).json({
+        success: false,
+        error: error.message,
+      });
+    }
+    if (error.name === 'GeminiRateLimitError' || error.status === 429) {
+      return res.status(429).json({
+        success: false,
+        error: error.message,
+        retryAfter: error.retryAfter || 60,
       });
     }
     next(error);

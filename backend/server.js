@@ -478,6 +478,7 @@ app.put('/api/user/notifications/settings', protect, require('./controllers/user
 app.get('/api/user/dashboard', protect, require('./controllers/userController').getDashboardLayout);
 app.post('/api/user/dashboard', protect, require('./controllers/userController').updateDashboardLayout);
 app.use('/api/ai', aiRoutes);
+app.use('/api/sync', require('./routes/syncRoutes'));
 app.use('/api/quiz-battles', quizBattleRoutes);
 app.use('/api/adaptive-exams', adaptiveExamRoutes);
 app.use('/api/quizzes/diagram-hotspot', diagramQuestionRoutes);
@@ -682,6 +683,7 @@ try {
 global.io = io;
 // Initialize socket handlers
 require('./sockets/battleHandler')(io);
+require('./sockets/quizBattleSocket')(io);
 require('./sockets/chatHandler')(io);
 require('./sockets/e2eeChatHandler')(io);
 require('./sockets/crdtHandler')(io);
@@ -735,9 +737,11 @@ startReconciliationScheduler();
 
 const { initStudyReminderCron } = require('./jobs/studyReminderCron');
 const { initStreakReminderCron } = require('./jobs/streakReminderCron');
+const { initStudyReminderJob } = require('./jobs/studyReminderJob');
 const { initBackupScheduler } = require('./services/backupScheduler');
 initStudyReminderCron(io);
 initStreakReminderCron(io);
+initStudyReminderJob();
 initBackupScheduler();
 
 const { startWorker } = require('./workers/squadActivityWorker');

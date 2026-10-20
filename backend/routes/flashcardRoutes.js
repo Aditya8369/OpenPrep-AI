@@ -22,6 +22,8 @@ const {
   generateClozeFlashcards,
   generateDeckPodcast,
   getPodcastEpisodeById,
+  deduplicateDeck,
+  mergeDuplicateCards,
 } = require('../controllers/flashcardController');
 const {
   getLeitnerDistribution,
@@ -915,11 +917,9 @@ router.post('/sync-batch', protect, batchSyncOfflineReviews);
 router.get('/podcasts/:id', protect, getPodcastEpisodeById);
 router.post('/:deckId/generate-podcast', protect, generateDeckPodcast);
 
-// Anki (.apkg) Spaced Repetition Exporter & Importer
-router.get('/deck/:id/export/anki', protect, exportDeckToAnki);
-router.get('/export/:deckId/anki', protect, exportDeckToAnki);
-router.post('/import/anki', protect, flashcardUpload.single('file'), importDeckFromAnki);
-router.post('/deck/:id/import/anki', protect, flashcardUpload.single('file'), importDeckFromAnki);
+// Vector Deduplication & Similarity Merging
+router.post('/deck/:id/deduplicate', protect, deduplicateDeck);
+router.post('/deck/:id/merge', protect, mergeDuplicateCards);
 
 router.delete('/:id', protect, deleteFlashcard);
 

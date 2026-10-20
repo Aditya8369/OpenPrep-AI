@@ -128,3 +128,21 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// ── Background Sync Event ──
+self.addEventListener('sync', (event) => {
+  if (
+    event.tag === 'openprep-background-sync' ||
+    event.tag === 'openprep-sync-queue' ||
+    event.tag === 'sync-mutations'
+  ) {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'TRIGGER_SYNC', tag: event.tag });
+        });
+      })
+    );
+  }
+});
+

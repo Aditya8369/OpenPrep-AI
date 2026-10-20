@@ -44,6 +44,11 @@ const NotificationSettings = sequelize.define(
       allowNull: false,
       defaultValue: false,
     },
+    channelDiscordEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
     channelInAppEnabled: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
@@ -51,6 +56,14 @@ const NotificationSettings = sequelize.define(
     },
     telegramChatId: {
       type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    telegramBotToken: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    discordWebhookUrl: {
+      type: DataTypes.TEXT,
       allowNull: true,
     },
     whatsappNumber: {

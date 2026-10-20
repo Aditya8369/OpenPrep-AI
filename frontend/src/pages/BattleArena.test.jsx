@@ -15,17 +15,18 @@ vi.mock('../services/socket', () => ({
     emit: vi.fn(),
     connected: true,
   },
+  connectSocket: vi.fn(),
 }));
 
 vi.mock('../services/api.js', () => ({
   default: {
-    get: vi.fn().mockResolvedValue({ data: { data: [{ _id: 'subj1', name: 'Computer Science', topicCount: 5 }] } }),
+    get: vi.fn().mockResolvedValue({ data: { success: true, data: [{ _id: 'subj1', name: 'Computer Science', topicCount: 5 }] } }),
     post: vi.fn(),
   },
 }));
 
 vi.mock('react-redux', () => ({
-  useSelector: vi.fn(() => ({ user: { name: 'TestPlayer' } })),
+  useSelector: vi.fn(() => ({ user: { id: 'user-1', name: 'TestPlayer', eloRating: 1200 } })),
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -56,7 +57,7 @@ describe('BattleArena Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(emitHandlers).forEach((key) => delete emitHandlers[key]);
-    useSelector.mockReturnValue({ user: { name: 'TestPlayer' } });
+    useSelector.mockReturnValue({ user: { id: 'user-1', name: 'TestPlayer', eloRating: 1200 } });
     socket.emit.mockImplementation(() => undefined);
   });
 
@@ -68,6 +69,7 @@ describe('BattleArena Component', () => {
     expect(screen.getByPlaceholderText('Enter 6-digit code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /join lobby/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /create new lobby/i })).toBeInTheDocument();
+    expect(screen.getByText(/1v1 Speed Matchmaking/i)).toBeInTheDocument();
   });
 
   it('joins a lobby by entering a room code', async () => {
@@ -227,6 +229,117 @@ describe('BattleArena Component', () => {
       expect(screen.getByText('Live Scores:')).toBeInTheDocument();
       expect(screen.getByText('30')).toBeInTheDocument();
       expect(screen.getByText('10')).toBeInTheDocument();
+    });
+  });
+
+  it('joins 1v1 matchmaking queue and emits battle:join_queue', () => {
+    render(<BattleArena />);
+    const matchmakeBtn = screen.getByRole('button', { name: /find match \(ranked 1v1\)/i });
+    fireEvent.click(matchmakeBtn);
+
+    expect(socket.emit).toHaveBeenCalledWith(
+      'battle:join_queue',
+      expect.objectContaining({
+        username: 'TestPlayer',
+        elo: 1200,
+      })
+    );
+  });
+
+  it('transitions to 1v1 split-screen HUD when battle:matched is received', async () => {
+    captureSocketHandlers();
+    render(<BattleArena />);
+
+    emitHandlers['battle:matched']({
+      roomId: 'BATTLE_ROOM_1',
+      self: { userId: 'user-1', username: 'TestPlayer', elo: 1200, hp: 100, score: 0 },
+      opponent: { userId: 'user-2', username: 'RivalPlayer', elo: 1250, hp: 100, score: 0 },
+      questions: [
+        {
+          questionText: 'What is 2 + 2?',
+          options: ['3', '4', '5', '6'],
+        },
+      ],
+      totalQuestions: 1,
+      timeLimit: 15,
+      currentQuestionIndex: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('TestPlayer')).toBeInTheDocument();
+      expect(screen.getByText('RivalPlayer')).toBeInTheDocument();
+      expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument();
+      expect(screen.getByText('Question 1 of 1')).toBeInTheDocument();
+    });
+  });
+
+  it('submits an answer in 1v1 mode and shows opponent lock indicator when battle:opponent_progress arrives', async () => {
+    captureSocketHandlers();
+    render(<BattleArena />);
+
+    emitHandlers['battle:matched']({
+      roomId: 'BATTLE_ROOM_1',
+      self: { userId: 'user-1', username: 'TestPlayer', elo: 1200, hp: 100, score: 0 },
+      opponent: { userId: 'user-2', username: 'RivalPlayer', elo: 1250, hp: 100, score: 0 },
+      questions: [
+        {
+          questionText: 'What is the speed of light?',
+          options: ['3x10^8 m/s', '100 km/h'],
+        },
+      ],
+      totalQuestions: 1,
+      timeLimit: 15,
+      currentQuestionIndex: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('What is the speed of light?')).toBeInTheDocument();
+    });
+
+    // Opponent locks in answer
+    emitHandlers['battle:opponent_progress']({
+      opponentLockedIn: true,
+      opponentScore: 100,
+      opponentHp: 100,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Answer Locked!/i)).toBeInTheDocument();
+    });
+
+    // User clicks option
+    fireEvent.click(screen.getByText('3x10^8 m/s'));
+    expect(socket.emit).toHaveBeenCalledWith(
+      'battle:answer_submitted',
+      expect.objectContaining({
+        roomId: 'BATTLE_ROOM_1',
+        questionIndex: 0,
+        selectedOption: 0,
+      })
+    );
+  });
+
+  it('displays ELO gain and question review on battle:round_ended', async () => {
+    captureSocketHandlers();
+    render(<BattleArena />);
+
+    emitHandlers['battle:round_ended']({
+      roomId: 'BATTLE_ROOM_1',
+      winner: { userId: 'user-1', username: 'TestPlayer', score: 200 },
+      players: [
+        { userId: 'user-1', username: 'TestPlayer', score: 200, correctCount: 1, oldElo: 1200, newElo: 1216, eloDelta: 16 },
+        { userId: 'user-2', username: 'RivalPlayer', score: 0, correctCount: 0, oldElo: 1200, newElo: 1184, eloDelta: -16 },
+      ],
+      questionBreakdown: [
+        { index: 1, questionText: 'Sample Question', correctAnswer: 'Correct Answer', explanation: 'Sample explanation' },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Victory!')).toBeInTheDocument();
+      expect(screen.getByText('+16')).toBeInTheDocument();
+      expect(screen.getByText(/Question Review Breakdown/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /rematch/i })).toBeInTheDocument();
     });
   });
 });

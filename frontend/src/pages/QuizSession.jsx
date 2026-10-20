@@ -27,6 +27,7 @@ import QuestionExplanation from '../components/dashboard/QuestionExplanation';
 import SubjectiveQuestionView from '../components/quiz/SubjectiveQuestionView';
 import QuestionDiscussionThread from '../components/quiz/QuestionDiscussionThread';
 import confetti from 'canvas-confetti';
+import soundService from '../services/soundService';
 
 export const getScoreMotivationalMessage = (score) => {
   const numScore = Number(score) || 0;
@@ -361,6 +362,7 @@ const QuizSession = () => {
 
 const handleOptionSelect = useCallback((questionId, option) => {
     if (submitted || timeElapsed || submitting) return;
+    soundService.playFlipSound();
     setAnswers((prevAnswers) => ({
       ...prevAnswers,
       [questionId]: option,
@@ -471,6 +473,12 @@ const submitQuiz = useCallback(async () => {
 
       setResult(res.data.data);
       setSubmitted(true);
+      const score = res.data?.data?.score ?? 0;
+      if (score >= 80) {
+        soundService.playStreakFanfare();
+      } else {
+        soundService.playSuccessChime();
+      }
       if (id) {
         localStorage.removeItem(`quiz_progress_${id}`);
       }

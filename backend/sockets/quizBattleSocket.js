@@ -1,34 +1,175 @@
 const crypto = require('crypto');
+const quizBattleService = require('../services/quizBattleService');
+const logger = require('../utils/logger');
 
-// In-memory room storage (can be scaled with Redis adapter if needed)
-const activeRooms = new Map();
+// In-memory room storage for custom room code battles (legacy / friend match support)
+const customRooms = new Map();
 
 function setupQuizBattleSocket(io) {
   io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
+    logger.info(`[QuizBattleSocket] Connection established: ${socket.id}`);
 
-    // 1. Create Room with 6-character room code
+    // ==========================================
+    // 1v1 SPEED QUIZ BATTLE MATCHMAKING (Issue #2307)
+    // ==========================================
+
+    // 1. Join Matchmaking Queue
+    socket.on('battle:join_queue', async (data = {}) => {
+      try {
+        const userId = data.userId || socket.user?.id || socket.id;
+        const username = data.username || socket.user?.name || `Player_${socket.id.substring(0, 4)}`;
+        const elo = Number(data.elo || socket.user?.eloRating || 1200);
+        const subjectId = data.subjectId || 'general';
+        const avatar = data.avatar || socket.user?.avatar || null;
+
+        logger.info(`[QuizBattleSocket] User joining queue: ${username} (ELO: ${elo}, Subject: ${subjectId})`);
+
+        const result = await quizBattleService.addToMatchmakingQueue({
+          userId,
+          socketId: socket.id,
+          username,
+          elo,
+          subjectId,
+          avatar,
+        });
+
+        if (result.matched) {
+          const { roomId, player1, player2, session } = result;
+          const p1Socket = io.sockets.sockets.get(player1.socketId);
+          const p2Socket = io.sockets.sockets.get(player2.socketId);
+
+          if (p1Socket) p1Socket.join(roomId);
+          if (p2Socket) p2Socket.join(roomId);
+
+          logger.info(`[QuizBattleSocket] Match created! Room: ${roomId} (${player1.username} vs ${player2.username})`);
+
+          // Send matched event to Player 1 with Player 2 as opponent
+          io.to(player1.socketId).emit('battle:matched', {
+            roomId,
+            self: player1,
+            opponent: player2,
+            questions: session.questions.map(q => ({
+              questionText: q.questionText,
+              options: q.options,
+            })),
+            totalQuestions: session.questionCount,
+            timeLimit: session.timePerQuestion,
+            roundStartTime: session.roundStartedAt,
+            currentQuestionIndex: 0,
+          });
+
+          // Send matched event to Player 2 with Player 1 as opponent
+          io.to(player2.socketId).emit('battle:matched', {
+            roomId,
+            self: player2,
+            opponent: player1,
+            questions: session.questions.map(q => ({
+              questionText: q.questionText,
+              options: q.options,
+            })),
+            totalQuestions: session.questionCount,
+            timeLimit: session.timePerQuestion,
+            roundStartTime: session.roundStartedAt,
+            currentQuestionIndex: 0,
+          });
+
+          // Start synchronized round clock timer
+          startSynchronizedClock(io, roomId, session);
+        } else {
+          socket.emit('battle:queued', {
+            status: 'queued',
+            message: 'Searching for an opponent with similar ELO (+/- 200 rating)...',
+            subjectId,
+          });
+        }
+      } catch (err) {
+        logger.error('[QuizBattleSocket] Error in battle:join_queue:', err.message);
+        socket.emit('battle:error', { message: 'Failed to join matchmaking queue.' });
+      }
+    });
+
+    // 2. Submit Answer during 1v1 Battle
+    socket.on('battle:answer_submitted', async (data = {}) => {
+      try {
+        const { roomId, questionIndex, selectedOption, clientTimestamp } = data;
+        const result = quizBattleService.submitAnswer({
+          roomId,
+          socketId: socket.id,
+          questionIndex,
+          selectedOption,
+          clientTimestamp,
+        });
+
+        if (result.error) {
+          return socket.emit('battle:error', { message: result.error });
+        }
+
+        // Send submission acknowledgement to answering player
+        socket.emit('battle:answer_ack', {
+          isCorrect: result.isCorrect,
+          pointsEarned: result.pointsEarned,
+          score: result.player.score,
+          correctAnswerIndex: result.correctAnswerIndex,
+          explanation: result.explanation,
+        });
+
+        // Broadcast real-time progress update to opponent
+        if (result.opponent) {
+          io.to(result.opponent.socketId).emit('battle:opponent_progress', {
+            opponentLockedIn: true,
+            opponentScore: result.player.score,
+            opponentHp: result.player.hp,
+            selfHp: result.opponent.hp,
+            questionIndex,
+          });
+        }
+
+        // If both players have locked in answers for the current question
+        if (result.bothAnswered) {
+          handleRoundTransition(io, roomId);
+        }
+      } catch (err) {
+        logger.error('[QuizBattleSocket] Error in battle:answer_submitted:', err.message);
+      }
+    });
+
+    // 3. Rematch Request
+    socket.on('battle:rematch_request', async ({ roomId, opponentUserId }) => {
+      const session = quizBattleService.getBattleSession(roomId);
+      if (!session) return;
+
+      const opponentSocketId = Object.keys(session.players).find(id => id !== socket.id);
+      if (opponentSocketId) {
+        io.to(opponentSocketId).emit('battle:rematch_offered', {
+          roomId,
+          offeredBy: socket.user?.name || 'Opponent',
+        });
+      }
+    });
+
+    // ==========================================
+    // LEGACY CUSTOM ROOM CODE SUPPORT (Friend lobbies)
+    // ==========================================
+
     socket.on('create-room', ({ hostName, quizId }) => {
       const roomCode = crypto.randomBytes(3).toString('hex').toUpperCase();
-      
       const room = {
         roomCode,
         hostId: socket.id,
         quizId,
-        status: 'lobby', // 'lobby' | 'countdown' | 'active' | 'finished'
+        status: 'lobby',
         players: [{ id: socket.id, name: hostName, score: 0, connected: true }],
         currentQuestionIndex: 0,
         timer: 30,
       };
 
-      activeRooms.set(roomCode, room);
+      customRooms.set(roomCode, room);
       socket.join(roomCode);
       socket.emit('room-created', { roomCode, room });
     });
 
-    // 2. Join Room with 6-character code
     socket.on('join-room', ({ roomCode, playerName }) => {
-      const room = activeRooms.get(roomCode);
+      const room = customRooms.get(roomCode);
       if (!room) {
         return socket.emit('error-message', { message: 'Room not found with this code.' });
       }
@@ -38,13 +179,11 @@ function setupQuizBattleSocket(io) {
 
       socket.join(roomCode);
       room.players.push({ id: socket.id, name: playerName, score: 0, connected: true });
-      
       io.to(roomCode).emit('update-lobby', room);
     });
 
-    // 3. Start Synchronized Quiz Countdown & Battle
     socket.on('start-battle', ({ roomCode }) => {
-      const room = activeRooms.get(roomCode);
+      const room = customRooms.get(roomCode);
       if (!room || room.hostId !== socket.id) return;
 
       room.status = 'countdown';
@@ -61,43 +200,137 @@ function setupQuizBattleSocket(io) {
       }, 1000);
     });
 
-    // 4. Handle Option Submission & Live Leaderboard Update
     socket.on('submit-answer', ({ roomCode, isCorrect, timeRemaining }) => {
-      const room = activeRooms.get(roomCode);
+      const room = customRooms.get(roomCode);
       if (!room) return;
 
       const player = room.players.find((p) => p.id === socket.id);
       if (player && isCorrect) {
-        // Award points based on speed (time remaining) + base score
         player.score += 100 + (timeRemaining * 5);
       }
 
-      // Sort leaderboard descending by score
       const sortedLeaderboard = [...room.players].sort((a, b) => b.score - a.score);
       io.to(roomCode).emit('live-leaderboard', { leaderboard: sortedLeaderboard });
     });
 
-    // 5. Reconnection Handling for Transient Drops
+    // ==========================================
+    // DISCONNECTION & GRACE PERIOD HANDLING
+    // ==========================================
+
     socket.on('disconnect', () => {
-      for (let [roomCode, room] of activeRooms.entries()) {
+      logger.info(`[QuizBattleSocket] Disconnected: ${socket.id}`);
+
+      // 1. Remove from matchmaking queue if waiting
+      quizBattleService.removeFromMatchmakingQueue(socket.id);
+
+      // 2. Check if in active 1v1 battle
+      const sessionInfo = quizBattleService.findSessionBySocketId(socket.id);
+      if (sessionInfo) {
+        const { roomId, session } = sessionInfo;
+        const disconnectingPlayer = session.players[socket.id];
+
+        // Notify opponent about disconnect and 15s grace period
+        io.to(roomId).emit('battle:disconnect', {
+          disconnectedPlayer: disconnectingPlayer?.username || 'Opponent',
+          gracePeriodSeconds: 15,
+          message: `${disconnectingPlayer?.username || 'Opponent'} disconnected. 15-second grace period active.`,
+        });
+
+        // Schedule forfeit after 15 seconds
+        quizBattleService.scheduleDisconnectForfeit(socket.id, (forfeitedRoomId, summary) => {
+          io.to(forfeitedRoomId).emit('battle:round_ended', {
+            ...summary,
+            forfeited: true,
+            message: 'Opponent timed out. Match forfeited.',
+          });
+        });
+      }
+
+      // 3. Clean up custom rooms
+      for (const [roomCode, room] of customRooms.entries()) {
         const player = room.players.find((p) => p.id === socket.id);
         if (player) {
           player.connected = false;
           io.to(roomCode).emit('update-lobby', room);
-          
-          // Clean up room after 2 minutes if player doesn't reconnect
+
           setTimeout(() => {
             if (!player.connected) {
               room.players = room.players.filter((p) => p.id !== socket.id);
-              if (room.players.length === 0) activeRooms.delete(roomCode);
+              if (room.players.length === 0) customRooms.delete(roomCode);
               else io.to(roomCode).emit('update-lobby', room);
             }
-          }, 120000);
+          }, 15000);
         }
       }
-      console.log(`User disconnected: ${socket.id}`);
     });
   });
+}
+
+/**
+ * Manages the synchronized server question clock.
+ */
+function startSynchronizedClock(io, roomId, session) {
+  let remainingSeconds = session.timePerQuestion;
+
+  const clockInterval = setInterval(() => {
+    const currentSession = quizBattleService.getBattleSession(roomId);
+    if (!currentSession || currentSession.status === 'finished') {
+      clearInterval(clockInterval);
+      return;
+    }
+
+    remainingSeconds--;
+    io.to(roomId).emit('battle:timer_tick', {
+      timeRemaining: Math.max(0, remainingSeconds),
+      questionIndex: currentSession.currentQuestionIndex,
+    });
+
+    if (remainingSeconds <= 0) {
+      clearInterval(clockInterval);
+      // Auto advance round when time expires
+      handleRoundTransition(io, roomId);
+    }
+  }, 1000);
+
+  session.activeClockInterval = clockInterval;
+}
+
+/**
+ * Handles transition to the next question round or end of match.
+ */
+async function handleRoundTransition(io, roomId) {
+  const session = quizBattleService.getBattleSession(roomId);
+  if (!session || session.status === 'finished') return;
+
+  if (session.activeClockInterval) {
+    clearInterval(session.activeClockInterval);
+    session.activeClockInterval = null;
+  }
+
+  // Advance round
+  const transition = quizBattleService.advanceRound(roomId);
+  if (!transition) return;
+
+  if (transition.isFinished) {
+    // Battle Complete! Finalize and calculate ELO
+    const summary = await quizBattleService.finalizeBattle(roomId);
+    io.to(roomId).emit('battle:round_ended', summary);
+  } else {
+    // Emit new question to both players
+    io.to(roomId).emit('battle:new_question', {
+      questionIndex: transition.currentQuestionIndex,
+      question: {
+        questionText: transition.question.questionText,
+        options: transition.question.options,
+      },
+      totalQuestions: transition.totalQuestions,
+      timeLimit: transition.timeLimit,
+      roundStartTime: session.roundStartedAt,
+    });
+
+    // Start clock for the new round
+    startSynchronizedClock(io, roomId, session);
+  }
 }
 
 module.exports = setupQuizBattleSocket;

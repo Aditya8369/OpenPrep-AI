@@ -4,9 +4,18 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
-const { explainQuestion, chatWithAssistant, solveImageQuestion, generateQuestions } = require('../controllers/aiController');
+const aiController = require('../controllers/aiController');
+const {
+  explainQuestion,
+  chatWithAssistant,
+  solveImageQuestion,
+  solveDiagram,
+  generateQuestions,
+} = aiController;
 const { generateMindMap, getMindMapById, getUserMindMaps } = require('../controllers/mindMapController');
-const { protect } = require('../middleware/auth');
+const { protect, requireAdmin } = require('../middleware/auth');
+const auth = protect;
+const adminAuth = requireAdmin;
 const { aiLimiter } = require('../middleware/rateLimiter');
 const { checkAiQuota } = require('../middleware/aiQuotaMiddleware');
 const { aiSanitizer } = require('../middleware/aiSanitizer');
@@ -205,6 +214,25 @@ router.post(
   checkAiQuota,
   upload.single('image'),
   solveImageQuestion
+);
+
+/**
+ * @swagger
+ * /api/ai/solve-diagram:
+ *   post:
+ *     summary: Multimodal Math & Science Diagram OCR Solver with Interactive KaTeX Derivations
+ *     description: Ingests uploaded diagram/formula image, transcribes into LaTeX, extracts variables, and produces step-by-step derivations.
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/solve-diagram',
+  protect,
+  aiLimiter,
+  checkAiQuota,
+  upload.single('image'),
+  solveDiagram
 );
 
 router.post(

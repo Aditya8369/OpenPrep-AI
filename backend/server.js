@@ -737,9 +737,11 @@ startReconciliationScheduler();
 
 const { initStudyReminderCron } = require('./jobs/studyReminderCron');
 const { initStreakReminderCron } = require('./jobs/streakReminderCron');
+const { initStudyReminderJob } = require('./jobs/studyReminderJob');
 const { initBackupScheduler } = require('./services/backupScheduler');
 initStudyReminderCron(io);
 initStreakReminderCron(io);
+initStudyReminderJob();
 initBackupScheduler();
 
 const { startWorker } = require('./workers/squadActivityWorker');

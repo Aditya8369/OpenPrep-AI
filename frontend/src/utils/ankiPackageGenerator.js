@@ -36,3 +36,31 @@ export const downloadAnkiPackage = async (deckId, deckName) => {
         throw new Error('Failed to export deck. Please try again.');
     }
 };
+
+/**
+ * Uploads an Anki .apkg file to import flashcards into OpenPrep AI
+ * 
+ * @param {File} file - The .apkg file to upload
+ * @param {string} [subjectId] - Optional subject/deck ID
+ * @returns {Promise<Object>}
+ */
+export const uploadAnkiPackage = async (file, subjectId) => {
+    const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+    const formData = new FormData();
+    formData.append('file', file);
+    if (subjectId) {
+        formData.append('subjectId', subjectId);
+    }
+
+    try {
+        const response = await axios.post(`${API_URL}/flashcards/import/anki`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+        return response.data;
+    } catch (error) {
+        console.error('Failed to upload Anki package:', error);
+        throw new Error(error.response?.data?.message || 'Failed to import Anki deck.');
+    }
+};

@@ -35,6 +35,7 @@ const { aiLimiter } = require('../middleware/rateLimiter');
 const { checkQuota } = require('../middleware/quotaMiddleware');
 const flashcardUpload = require('../middleware/flashcardUpload');
 const audioFlashcardUpload = require('../middleware/audioFlashcardUpload');
+const { exportDeckToAnki, importDeckFromAnki } = require('../controllers/ankiController');
 const {
 validateGenerateAIFlashcards,
   validateGenerateFlashcardsFromNote,

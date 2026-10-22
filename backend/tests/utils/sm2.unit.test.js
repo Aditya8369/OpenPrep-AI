@@ -154,4 +154,34 @@ describe('SM-2 Spaced Repetition Utility Tests', () => {
       expect(result.interval).toBe(365);
     });
   });
+
+  describe('Early Review Handling', () => {
+    it('should scale interval proportionally based on elapsed days when reviewed early', () => {
+      // 30 days interval, reviewed on day 2 (elapsedDays = 2) with efactor = 2.5
+      // formula: Math.round(30 + 2 * (2.5 - 1)) = 30 + 3 = 33 days
+      const result = calculateSM2({
+        interval: 30,
+        repetitions: 3,
+        efactor: 2.5,
+        quality: 5,
+        elapsedDays: 2,
+      });
+
+      expect(result.interval).toBe(33);
+      expect(result.repetitions).toBe(4);
+    });
+
+    it('should fall back to standard interval expansion when elapsedDays is not provided or overdue', () => {
+      const result = calculateSM2({
+        interval: 30,
+        repetitions: 3,
+        efactor: 2.5,
+        quality: 5,
+        elapsedDays: 35,
+      });
+
+      // 30 * 2.5 = 75 days
+      expect(result.interval).toBe(75);
+    });
+  });
 });

@@ -18,6 +18,7 @@ exports.calculateSM2 = ({
   repetitions,
   efactor,
   quality,
+  elapsedDays = null,
   easyFactorModifier = 1.0,
   intervalModifier = 1.0,
   step1Interval = 1,
@@ -39,7 +40,12 @@ exports.calculateSM2 = ({
     } else if (repetitions === 1) {
       nextInterval = s2Int;
     } else {
-      nextInterval = Math.round(interval * efactor * intMod);
+      // Account for early reviews by scaling progression with actual elapsed time
+      if (typeof elapsedDays === 'number' && elapsedDays >= 0 && elapsedDays < interval) {
+        nextInterval = Math.max(1, Math.round((interval + elapsedDays * (efactor - 1)) * intMod));
+      } else {
+        nextInterval = Math.round(interval * efactor * intMod);
+      }
     }
     nextRepetitions = repetitions + 1;
   } else {

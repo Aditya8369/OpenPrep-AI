@@ -21,6 +21,7 @@ import MathRenderer from '../components/common/MathRenderer';
 import API from '../services/api';
 import { db } from '../services/db.js';
 import useVoiceControl from '../hooks/useVoiceControl';
+import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts';
 import VoiceModeToggle from '../components/VoiceModeToggle';
 import AudioWaveform from '../components/AudioWaveform';
 import GenerateFlashcardsFromAudioModal from '../components/dashboard/GenerateFlashcardsFromAudioModal';
@@ -472,86 +473,96 @@ useEffect(() => {
     }
   };
 
-  // Comprehensive Keyboard Navigation Support
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Input guard: ignore shortcuts if typing inside text inputs or editable areas
-      const activeEl = document.activeElement;
-      const isInputActive =
-        activeEl &&
-        (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || activeEl.isContentEditable);
-      if (isInputActive) return;
-
-      // Question mark (?) to toggle keyboard shortcuts modal
-      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-        e.preventDefault();
-        setIsKeyboardHelpOpen((prev) => !prev);
-        return;
-      }
-
-      // Escape to close open modals or exit review session
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (isKeyboardHelpOpen) {
-          setIsKeyboardHelpOpen(false);
-        } else if (isSettingsOpen) {
-          setIsSettingsOpen(false);
-        } else if (isAudioGeneratorOpen) {
-          setIsAudioGeneratorOpen(false);
-        } else {
-          handleExit();
-        }
-        return;
-      }
-
-      // Space or Enter to flip card front/back
-      if (e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault();
-        handleCardFlip();
-        return;
-      }
-
-      // ArrowRight or 'n' / 'N' to skip to Next Card
-      if (e.key === 'ArrowRight' || e.key === 'n' || e.key === 'N') {
-        e.preventDefault();
-        if (currentIndex < cards.length - 1) {
-          setCurrentIndex((prev) => prev + 1);
-          setIsFlipped(false);
-        }
-        return;
-      }
-
-      // ArrowLeft or 'p' / 'P' to go back to Previous Card
-      if (e.key === 'ArrowLeft' || e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        if (currentIndex > 0) {
-          setCurrentIndex((prev) => prev - 1);
-          setIsFlipped(false);
-        }
-        return;
-      }
-
-      // 0-5 keys for rating (only when card is flipped)
-      if (isFlipped && ['0', '1', '2', '3', '4', '5'].includes(e.key)) {
-        e.preventDefault();
-        handleReview(parseInt(e.key, 10));
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isFlipped,
-    isKeyboardHelpOpen,
-    isSettingsOpen,
-    isAudioGeneratorOpen,
-    currentIndex,
-    cards.length,
-    handleCardFlip,
-    handleReview,
-    handleExit,
-  ]);
-
+   // Keyboard shortcuts for flashcard review
+  useKeyboardShortcuts(
+    [
+      {
+        key: '?',
+        shift: true,
+        handler: () => setIsKeyboardHelpOpen((prev) => !prev),
+      },
+      {
+        key: '/',
+        mod: true,
+        handler: () => setIsKeyboardHelpOpen((prev) => !prev),
+      },
+      {
+        key: 'Escape',
+        allowWhileTyping: true,
+        handler: () => {
+          if (isKeyboardHelpOpen) {
+            setIsKeyboardHelpOpen(false);
+          } else if (isSettingsOpen) {
+            setIsSettingsOpen(false);
+          } else if (isAudioGeneratorOpen) {
+            setIsAudioGeneratorOpen(false);
+          } else {
+            handleExit();
+          }
+        },
+      },
+      {
+        key: ' ',
+        handler: handleCardFlip,
+      },
+      {
+        key: 'Enter',
+        handler: handleCardFlip,
+      },
+      {
+        key: 'ArrowRight',
+        handler: () => {
+          if (currentIndex < cards.length - 1) {
+            setCurrentIndex((prev) => prev + 1);
+            setIsFlipped(false);
+          }
+        },
+      },
+      {
+        key: 'n',
+        handler: () => {
+          if (currentIndex < cards.length - 1) {
+            setCurrentIndex((prev) => prev + 1);
+            setIsFlipped(false);
+          }
+        },
+      },
+      {
+        key: 'ArrowLeft',
+        handler: () => {
+          if (currentIndex > 0) {
+            setCurrentIndex((prev) => prev - 1);
+            setIsFlipped(false);
+          }
+        },
+      },
+      {
+        key: 'p',
+        handler: () => {
+          if (currentIndex > 0) {
+            setCurrentIndex((prev) => prev - 1);
+            setIsFlipped(false);
+          }
+        },
+      },
+      ...Object.entries({
+  0: 0,
+  1: 1,
+  2: 2,
+  3: 4,
+  4: 5,
+  5: 5,
+}).map(([key, quality]) => ({
+  key,
+  handler: () => {
+    if (isFlipped) {
+      window.setTimeout(() => handleReview(quality), 0);
+    }
+  },
+})),
+    ],
+    { enabled: true },
+  );
   // Persist the latest checkpoint when the tab is closed or refreshed.
   useEffect(() => {
     const handleBeforeUnload = () => {

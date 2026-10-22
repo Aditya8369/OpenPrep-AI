@@ -12,15 +12,29 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const shortcuts = [
-    { key: 'Space / Enter', label: 'Flip flashcard front or back' },
-    { key: '0 / 1 / 2 / 3 / 4 / 5', label: 'Rate flashcard quality (0: Blackout to 5: Easy)' },
-    { key: '→ or N', label: 'Skip to next card' },
-    { key: '← or P', label: 'Go back to previous card' },
-    { key: 'Escape', label: 'Close modal or exit review session' },
-    { key: '? (Shift + /)', label: 'Open / Close this keyboard shortcuts guide' },
+    const shortcutGroups = [
+    {
+      title: 'Flashcards',
+      shortcuts: [
+        { key: 'Space / Enter', label: 'Flip the flashcard' },
+        { key: '1', label: 'Rate Wrong' },
+        { key: '2', label: 'Rate Hard' },
+        { key: '3', label: 'Rate Good' },
+        { key: '4', label: 'Rate Easy' },
+        { key: '← / P', label: 'Previous card' },
+        { key: '→ / N', label: 'Next card' },
+      ],
+    },
+    {
+      title: 'Global',
+      shortcuts: [
+        { key: 'Ctrl / Cmd + K', label: 'Open global search' },
+        { key: 'Ctrl / Cmd + /', label: 'Open keyboard shortcuts' },
+        { key: '?', label: 'Open / close this guide' },
+        { key: 'Esc', label: 'Close modal or go back' },
+      ],
+    },
   ];
-
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -62,18 +76,31 @@ export default function KeyboardShortcutsModal({ isOpen, onClose }) {
             </button>
           </div>
 
-          {/* Shortcuts Table */}
-          <div className="space-y-2.5">
-            {shortcuts.map((sc, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 dark:bg-slate-900/60 border border-neutral-200/60 dark:border-slate-700/60 text-xs"
-              >
-                <span className="text-neutral-600 dark:text-neutral-300 font-medium">{sc.label}</span>
-                <kbd className="px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-white dark:bg-slate-800 border border-neutral-300 dark:border-slate-600 text-indigo-600 dark:text-indigo-400 shadow-sm">
-                  {sc.key}
-                </kbd>
-              </div>
+          {/* Categorized Shortcuts */}
+          <div className="space-y-5">
+            {shortcutGroups.map((group) => (
+              <section key={group.title} aria-label={group.title}>
+                <h4 className="mb-2 text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+                  {group.title}
+                </h4>
+
+                <div className="space-y-2">
+                  {group.shortcuts.map((shortcut) => (
+                    <div
+                      key={`${group.title}-${shortcut.key}`}
+                      className="flex items-center justify-between gap-4 p-3 rounded-xl bg-neutral-50 dark:bg-slate-900/60 border border-neutral-200/60 dark:border-slate-700/60 text-xs"
+                    >
+                      <span className="text-neutral-600 dark:text-neutral-300 font-medium">
+                        {shortcut.label}
+                      </span>
+
+                      <kbd className="shrink-0 px-2.5 py-1 text-xs font-mono font-bold rounded-lg bg-white dark:bg-slate-800 border border-neutral-300 dark:border-slate-600 text-indigo-600 dark:text-indigo-400 shadow-sm">
+                        {shortcut.key}
+                      </kbd>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
 

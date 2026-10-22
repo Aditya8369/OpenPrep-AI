@@ -282,7 +282,7 @@ test('allows speech speed and language controls when hands-free mode is enabled'
     await screen.findByText('What is React?');
 
     fireEvent.keyDown(window, { key: ' ' });
-    fireEvent.keyDown(window, { key: '4' });
+    fireEvent.keyDown(window, { key: '3' });
 
     await waitFor(() => {
       expect(queuedReview()).toHaveBeenCalledWith('c1', 4);
@@ -328,7 +328,7 @@ test('allows speech speed and language controls when hands-free mode is enabled'
     fireEvent.keyDown(window, { key: '?' });
 
     expect(await screen.findByText('Keyboard Shortcuts Guide')).toBeInTheDocument();
-    expect(screen.getByText('Flip flashcard front or back')).toBeInTheDocument();
+    expect(screen.getByText('Flip the flashcard')).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => {
@@ -364,7 +364,7 @@ test('allows speech speed and language controls when hands-free mode is enabled'
     input.focus();
 
     fireEvent.keyDown(input, { key: '?' });
-    expect(screen.queryByText('Flip flashcard front or back')).not.toBeInTheDocument();
+    expect(screen.queryByText('Flip the flashcard')).not.toBeInTheDocument();
 
     // With focus back outside the input the same key must take effect, so the
     // assertion above cannot pass just because the shortcut is broken.
@@ -372,7 +372,7 @@ test('allows speech speed and language controls when hands-free mode is enabled'
     document.body.removeChild(input);
 
     fireEvent.keyDown(window, { key: '?' });
-    expect(await screen.findByText('Flip flashcard front or back')).toBeInTheDocument();
+    expect(await screen.findByText('Flip the flashcard')).toBeInTheDocument();
   });
 });
 

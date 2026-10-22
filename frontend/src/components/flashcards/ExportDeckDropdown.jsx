@@ -4,6 +4,7 @@ import API from '../../services/api';
 import ExportModal from '../common/ExportModal';
 import { buildFlashcardDocument, buildFlashcardChapters, exportHTMLToPDF, exportToEPUB } from '../../utils/exportDocs';
 import AudioPodcastPlayerModal from './AudioPodcastPlayerModal';
+import DeckImportModal from './DeckImportModal';
 
 const ExportDeckDropdown = ({ subjectId = null, onImported = null }) => {
   const [isImporting, setIsImporting] = useState(false);
@@ -13,6 +14,7 @@ const ExportDeckDropdown = ({ subjectId = null, onImported = null }) => {
   const [isPublic, setIsPublic] = useState(false);
   const [loadingShareState, setLoadingShareState] = useState(false);
   const [showFormatModal, setShowFormatModal] = useState(false);
+  const [showImportWizardModal, setShowImportWizardModal] = useState(false);
   const [deckTitle, setDeckTitle] = useState('Flashcard Deck');
   const [deckCount, setDeckCount] = useState(0);
   const dropdownRef = useRef(null);
@@ -338,6 +340,15 @@ const ExportDeckDropdown = ({ subjectId = null, onImported = null }) => {
         title={`Export ${deckTitle}`}
         itemCount={deckCount}
         onExport={handleFormattedExport}
+      />
+
+      <DeckImportModal
+        isOpen={showImportWizardModal}
+        onClose={() => setShowImportWizardModal(false)}
+        defaultSubjectId={typeof subjectId === 'object' ? subjectId?.id : subjectId}
+        onImportSuccess={() => {
+          onImported?.();
+        }}
       />
 
       <AudioPodcastPlayerModal

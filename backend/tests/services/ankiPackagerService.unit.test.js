@@ -53,3 +53,32 @@ test('generateAnkiPackage creates valid .apkg ZIP archive with SQLite database',
   assert(card2, 'Card 2 must be present');
   assert(card2.back.includes('Powerhouse'), 'Card 2 back text must match');
 });
+
+test('generateAnkiPackage preserves Cloze deletions and LaTeX markup', async () => {
+  const cards = [
+    {
+      front: 'The {{c1::hypothalamus::part of brain}} regulates body temperature.',
+      back: '{{c1::hypothalamus}} coordinates autonomic nervous system and pituitary gland.',
+      hint: 'Brain structure',
+      tags: ['neuroscience', 'anatomy'],
+    },
+    {
+      front: 'Calculate kinetic energy for mass $m$ and velocity $v$:',
+      back: '$E_k = \\frac{1}{2}mv^2$',
+      hint: 'Kinematics',
+      tags: ['physics', 'formula'],
+    },
+  ];
+
+  const apkgBuffer = await ankiPackagerService.generateAnkiPackage(cards, 'Cloze & Math Deck');
+  const parsed = await ankiPackagerService.parseAnkiPackage(apkgBuffer);
+
+  assert.equal(parsed.cards.length, 2);
+  const clozeCard = parsed.cards.find((c) => c.front.includes('hypothalamus'));
+  assert(clozeCard, 'Cloze card must be preserved');
+  assert(clozeCard.front.includes('{{c1::hypothalamus::part of brain}}'));
+
+  const mathCard = parsed.cards.find((c) => c.front.includes('kinetic energy'));
+  assert(mathCard, 'Math card must be preserved');
+  assert(mathCard.back.includes('\\frac{1}{2}mv^2'));
+});

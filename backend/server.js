@@ -356,38 +356,50 @@ app.get(['/uploads/:filename', '/uploads/podcasts/:filename'], protect, async (r
       }
     }
 
-    // Fallback: fuzzy match by extracting filename from stored URLs
+    // Fallback: match by filename pattern at database level to avoid full-table scans
     // Handles cases where stored URL is a full URL or has different path format
+    const searchOp = Op.iLike || Op.like;
+    const sanitizedFilename = filename.replace(/[%_]/g, '\\$&');
+
     if (!record) {
-      const allNotes = await Note.findAll({ where: { fileUrl: { [Op.ne]: null } } });
-      for (const note of allNotes) {
-        if (extractFilename(note.fileUrl) === filename) {
-          record = note;
-          isPublic = note.isPublic;
-          owner = note.user;
-          break;
-        }
+      const note = await Note.findOne({
+        where: {
+          fileUrl: {
+            [searchOp]: `%/${sanitizedFilename}`,
+          },
+        },
+      });
+      if (note && extractFilename(note.fileUrl) === filename) {
+        record = note;
+        isPublic = note.isPublic;
+        owner = note.user;
       }
     }
     if (!record) {
-      const allPyqs = await PYQ.findAll({ where: { fileUrl: { [Op.ne]: null } } });
-      for (const pyq of allPyqs) {
-        if (extractFilename(pyq.fileUrl) === filename) {
-          record = pyq;
-          owner = pyq.user;
-          break;
-        }
+      const pyq = await PYQ.findOne({
+        where: {
+          fileUrl: {
+            [searchOp]: `%/${sanitizedFilename}`,
+          },
+        },
+      });
+      if (pyq && extractFilename(pyq.fileUrl) === filename) {
+        record = pyq;
+        owner = pyq.user;
       }
     }
     if (!record) {
       const { PodcastEpisode } = require('./models');
-      const allEpisodes = await PodcastEpisode.findAll({ where: { audioUrl: { [Op.ne]: null } } });
-      for (const episode of allEpisodes) {
-        if (extractFilename(episode.audioUrl) === filename) {
-          record = episode;
-          owner = episode.userId;
-          break;
-        }
+      const episode = await PodcastEpisode.findOne({
+        where: {
+          audioUrl: {
+            [searchOp]: `%/${sanitizedFilename}`,
+          },
+        },
+      });
+      if (episode && extractFilename(episode.audioUrl) === filename) {
+        record = episode;
+        owner = episode.userId;
       }
     }
 

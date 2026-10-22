@@ -83,6 +83,7 @@ const KnowledgeGraphView = lazy(() => import('./components/notes/KnowledgeGraphV
 const PublicVerifyCertificate = lazy(() => import('./pages/PublicVerifyCertificate'));
 const MockExamArena = lazy(() => import('./components/exam/MockExamArena'));
 const HabitCorrelationDashboard = lazy(() => import('./pages/HabitCorrelationDashboard'));
+const GraphingSandboxPage = lazy(() => import('./pages/GraphingSandboxPage'));
 
 
 function App() {
@@ -503,6 +504,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <FormulaScratchpad />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/formula-scratchpad"
+            element={
+              <ProtectedRoute>
+                <FormulaScratchpad />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graphing-calculator"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graph-sandbox"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
               </ProtectedRoute>
             }
           />

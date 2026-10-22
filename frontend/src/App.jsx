@@ -23,6 +23,8 @@ import PomodoroWidget from './components/timer/PomodoroWidget';
 import MicroReviewModal from './components/widgets/MicroReviewModal';
 import { startMicroScheduler, showMicroNotification } from './services/microScheduleWorker';
 import ColorblindFilterSVG from './components/common/ColorblindFilterSVG';
+import AriaAnnouncer from './components/common/AriaAnnouncer';
+import SkipToContent from './components/common/SkipToContent';
 import './App.css';
 
 
@@ -202,12 +204,8 @@ function App() {
 
   return (
     <>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[99999] focus:px-4 focus:py-2 focus:bg-amber-700 focus:text-white focus:rounded-lg focus:shadow-2xl focus:outline-none focus:ring-2 focus:ring-amber-400 font-semibold text-xs"
-      >
-        Skip to main content
-      </a>
+      <SkipToContent targetId="main-content" />
+      <AriaAnnouncer />
       {aiQuotaExceededUntil && (
         <div className="bg-red-900 border-b border-red-700 text-red-50 text-center py-2 text-xs font-semibold select-none flex items-center justify-center gap-2 relative z-[9998]">
           <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping" />

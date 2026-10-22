@@ -938,3 +938,75 @@ li.markdown-item > p {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   WCAG 2.1 LEVEL AAA ACCESSIBILITY OVERHAUL
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Focus-Visible Indicator (Success Criterion 2.4.7 Focus Visible) */
+:focus-visible {
+  outline: 3px solid #f59e0b !important;
+  outline-offset: 2px !important;
+}
+
+/* Dyslexia-Friendly Typography (Success Criterion 1.4.12 Text Spacing) */
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+[data-dyslexic-font="true"],
+.font-dyslexic,
+[data-dyslexic-font="true"] * {
+  font-family: 'Atkinson Hyperlegible', 'OpenDyslexic', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  letter-spacing: 0.03em !important;
+  word-spacing: 0.06em !important;
+}
+
+/* Text Size Scaling */
+[data-font-scale="medium"] {
+  font-size: 115% !important;
+}
+
+[data-font-scale="large"] {
+  font-size: 130% !important;
+}
+
+/* High-Contrast OLED Theme (Success Criterion 1.4.6 Contrast Enhanced >= 7:1) */
+[data-high-contrast="true"],
+.high-contrast-mode {
+  --color-dark-bg: #000000 !important;
+  --color-dark-card: #000000 !important;
+  --color-dark-border: #ffffff !important;
+  --color-dark-text: #ffffff !important;
+  --color-dark-muted: #ffff00 !important;
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+[data-high-contrast="true"] button:focus-visible,
+[data-high-contrast="true"] a:focus-visible,
+[data-high-contrast="true"] input:focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 3px !important;
+}
+
+/* Reduced Motion Mode (Success Criterion 2.3.3 Animation from Interactions) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+[data-reduced-motion="true"],
+.reduced-motion-mode,
+[data-reduced-motion="true"] *,
+.reduced-motion-mode * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+  transform: none !important;
+}
+

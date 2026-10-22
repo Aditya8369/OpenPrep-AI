@@ -40,6 +40,7 @@ import { BADGE_LIST, BADGE_ICONS } from '../config/badges.js';
 import LazyImage from '../components/common/LazyImage';
 import ThemeCustomizerDrawer from '../components/ThemeCustomizerDrawer';
 import BadgeCarousel from '../components/badges/BadgeCarousel';
+import AccessibilityPanel from '../components/settings/AccessibilityPanel';
 import { useTheme } from '../context/ThemeContext';
 import { THEME_PRESETS } from '../themePresets';
 
@@ -454,6 +455,9 @@ const Settings = () => {
 
           <ThemeCustomizerDrawer isOpen={isCustomizerOpen} onClose={() => setIsCustomizerOpen(false)} />
         </VintagePaper>
+
+        {/* --- WCAG 2.1 AAA ACCESSIBILITY PREFERENCES --- */}
+        <AccessibilityPanel />
 
         {/* --- ACCESSIBILITY & TEXT-TO-SPEECH --- */}
         <VintagePaper className="border-t-4 border-t-amber-700">

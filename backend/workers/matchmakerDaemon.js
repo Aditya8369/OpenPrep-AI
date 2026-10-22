@@ -73,6 +73,7 @@ async function findMatches() {
         status: 'waiting',
         questionCount: 5,
         timePerQuestion: 15,
+        quizId: quiz ? quiz.id : null,
         quiz: quiz ? quiz.id : null,
       });
 

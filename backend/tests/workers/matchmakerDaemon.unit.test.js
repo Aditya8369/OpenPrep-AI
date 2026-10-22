@@ -281,6 +281,7 @@ describe('findMatches match creation', () => {
     await daemon.findMatches();
 
     expect(BattleSession.create.mock.calls[0][0].quiz).toBe('quiz-1');
+    expect(BattleSession.create.mock.calls[0][0].quizId).toBe('quiz-1');
   });
 
   it('creates the session with a null quiz when none exists', async () => {

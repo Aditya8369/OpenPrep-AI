@@ -10,9 +10,17 @@ const BattleSession = sequelize.define(
       primaryKey: true,
     },
     roomCode: {
-      type: DataTypes.STRING(6),
+      type: DataTypes.STRING(32),
       allowNull: false,
       unique: true,
+    },
+    roomName: {
+      type: DataTypes.STRING(255),
+      defaultValue: 'Battle Room',
+    },
+    password: {
+      type: DataTypes.STRING(255),
+      defaultValue: '',
     },
     hostUserId: {
       type: DataTypes.UUID,

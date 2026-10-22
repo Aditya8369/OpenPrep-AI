@@ -689,6 +689,12 @@ exports.reviewFlashcard = async (req, res, next) => {
     const step1Interval = req.user.sm2Step1Interval ?? 1;
     const step2Interval = req.user.sm2Step2Interval ?? 6;
 
+    let elapsedDays = null;
+    if (card.updatedAt) {
+      const elapsedMs = Math.max(0, Date.now() - new Date(card.updatedAt).getTime());
+      elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+    }
+
     const {
       interval: nextInterval,
       repetitions: nextRepetitions,
@@ -698,6 +704,7 @@ exports.reviewFlashcard = async (req, res, next) => {
       repetitions: card.repetitions,
       efactor: card.efactor,
       quality,
+      elapsedDays,
       easyFactorModifier,
       intervalModifier,
       step1Interval,
@@ -1044,8 +1051,7 @@ exports.getReviewForecast = async (req, res, next) => {
     const dateCounts = {};
 
     for (let i = 0; i < 30; i++) {
-      const date = new Date();
-      date.setDate(now.getDate() + i);
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + i));
       const dateString = date.toISOString().split('T')[0];
       dateCounts[dateString] = 0;
       forecast.push({

@@ -81,6 +81,8 @@ const OcrSolverPage = lazy(() => import('./pages/ocr/OcrSolverPage'));
 const MarkdownNotesEditor = lazy(() => import('./components/notes/MarkdownNotesEditor'));
 const KnowledgeGraphView = lazy(() => import('./components/notes/KnowledgeGraphView'));
 const PublicVerifyCertificate = lazy(() => import('./pages/PublicVerifyCertificate'));
+const MockExamArena = lazy(() => import('./components/exam/MockExamArena'));
+const HabitCorrelationDashboard = lazy(() => import('./pages/HabitCorrelationDashboard'));
 
 
 function App() {

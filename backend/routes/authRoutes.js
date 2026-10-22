@@ -22,6 +22,9 @@ const {
   oauthSuccessCallback,
   registerOAuthEmail,
   keepalive,
+  getActiveSessions,
+  revokeSession,
+  revokeOtherSessions,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/auth');
@@ -301,6 +304,11 @@ router.post('/sso/saml/callback', express.urlencoded({ extended: true }), ssoCon
 // Session keepalive routes
 router.post('/session/keepalive', protect, keepalive);
 router.post('/keepalive', protect, keepalive);
+
+// Multi-Device Session Management Routes (#2326)
+router.get('/sessions', protect, getActiveSessions);
+router.delete('/sessions/others', protect, revokeOtherSessions);
+router.delete('/sessions/:sessionId', protect, revokeSession);
 
 // ── Passkey / WebAuthn Routes ──
 const {

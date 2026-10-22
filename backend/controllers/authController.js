@@ -34,8 +34,10 @@ const getAccessTokenCookieOptions = () => ({
   path: '/',
 });
 
-const generateAccessToken = (id) => {
-  return jwt.sign({ id, type: 'access' }, jwtSecret, {
+const generateAccessToken = (id, sessionId = null) => {
+  const payload = { id, type: 'access' };
+  if (sessionId) payload.sessionId = sessionId;
+  return jwt.sign(payload, jwtSecret, {
     expiresIn: process.env.JWT_EXPIRE || '15m',
   });
 };
@@ -345,12 +347,30 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    const accessToken = generateAccessToken(user.id);
+    // Create multi-device session & detect impossible travel anomalies
+    let session = null;
+    let impossibleTravelAlert = null;
+    try {
+      const { createSession } = require('../middleware/sessionManager');
+      const sessionResult = await createSession(req, user.id, null, { userEmail: user.email });
+      session = sessionResult.session;
+      impossibleTravelAlert = sessionResult.impossibleTravelAlert;
+    } catch (sessionErr) {
+      // Graceful fallback if session creation fails
+    }
+
+    const sessionId = session ? session.id : null;
+    const accessToken = generateAccessToken(user.id, sessionId);
     res.cookie('token', accessToken, getAccessTokenCookieOptions());
+    if (sessionId) {
+      res.cookie('sessionId', sessionId, getAuthCookieOptions());
+    }
 
     res.status(200).json({
       success: true,
       token: accessToken,
+      sessionId,
+      securityAlert: impossibleTravelAlert,
       user: {
         id: user.id,
         name: user.name,
@@ -1392,8 +1412,20 @@ exports.logout = async (req, res, next) => {
       }
     }
 
+    // Revoke user session if sessionId is present
+    const sessionIdToRevoke = req.sessionId || req.cookies?.sessionId || (decoded && decoded.sessionId);
+    if (sessionIdToRevoke) {
+      try {
+        const { revokeSession } = require('../middleware/sessionManager');
+        await revokeSession(sessionIdToRevoke);
+      } catch {
+        // Non-blocking
+      }
+    }
+
     clearRefreshTokenCookie(res);
     res.clearCookie('token', getAccessTokenCookieOptions());
+    res.clearCookie('sessionId', getAuthCookieOptions());
 
     res.status(200).json({
       success: true,
@@ -1596,4 +1628,71 @@ exports.keepalive = async (req, res, next) => {
     next(error);
   }
 };
+
+// ---------------------------------------------------------------------------
+// Multi-Device Session Management Endpoints (#2326)
+// ---------------------------------------------------------------------------
+
+// @desc    Get all active sessions for current user
+// @route   GET /api/auth/sessions
+// @access  Private
+exports.getActiveSessions = async (req, res, next) => {
+  try {
+    const { getUserSessions } = require('../middleware/sessionManager');
+    const sessions = await getUserSessions(req.user.id, req.sessionId);
+    res.status(200).json({
+      success: true,
+      count: sessions.length,
+      currentSessionId: req.sessionId || null,
+      sessions,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Revoke specific remote session
+// @route   DELETE /api/auth/sessions/:sessionId
+// @access  Private
+exports.revokeSession = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    if (sessionId === 'others') {
+      return exports.revokeOtherSessions(req, res, next);
+    }
+    const { revokeSession: doRevoke } = require('../middleware/sessionManager');
+    const session = await doRevoke(sessionId, req.user.id);
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found or does not belong to you',
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Session revoked successfully',
+      sessionId,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Revoke all other remote sessions except current
+// @route   DELETE /api/auth/sessions/others
+// @access  Private
+exports.revokeOtherSessions = async (req, res, next) => {
+  try {
+    const { revokeOtherSessions: doRevokeOthers } = require('../middleware/sessionManager');
+    const revokedCount = await doRevokeOthers(req.user.id, req.sessionId);
+    res.status(200).json({
+      success: true,
+      message: 'All other sessions revoked successfully',
+      revokedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 

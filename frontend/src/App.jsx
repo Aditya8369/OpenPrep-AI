@@ -83,6 +83,7 @@ const KnowledgeGraphView = lazy(() => import('./components/notes/KnowledgeGraphV
 const PublicVerifyCertificate = lazy(() => import('./pages/PublicVerifyCertificate'));
 const MockExamArena = lazy(() => import('./components/exam/MockExamArena'));
 const HabitCorrelationDashboard = lazy(() => import('./pages/HabitCorrelationDashboard'));
+const AccountSecurity = lazy(() => import('./pages/AccountSecurity'));
 
 
 function App() {
@@ -530,6 +531,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/security"
+            element={
+              <ProtectedRoute>
+                <AccountSecurity />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/account/security"
+            element={
+              <ProtectedRoute>
+                <AccountSecurity />
               </ProtectedRoute>
             }
           />

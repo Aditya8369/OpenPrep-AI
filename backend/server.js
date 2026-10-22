@@ -38,8 +38,6 @@ const passport = require('./config/passport');
 const { getCorsMiddleware, getSocketCorsOrigin } = require('./middleware/corsHandler');
 const { metricsMiddleware, getMetrics } = require('./middleware/metricsMiddleware');
 const { initializeCacheCleanupCron } = require('./jobs/cacheCleanupCron');
-const documentProcessingRoutes = require('./routes/documentProcessingRoutes');
-app.use('/api/documents/processing', documentProcessingRoutes);
 // Initialize scheduled jobs
 initializeCacheCleanupCron();
 // Validate the whole environment against the schema in config/env.js before
@@ -92,6 +90,7 @@ const aiRoutes = require('./routes/aiRoutes');
 const aiEditorRoutes = require('./routes/aiEditorRoutes');
 const quizBattleRoutes = require('./routes/quizBattleRoutes');
 const pdfAnnotationRoutes = require('./routes/pdfAnnotationRoutes');
+const documentProcessingRoutes = require('./routes/documentProcessingRoutes');
 const folderRoutes = require('./routes/folderRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const reportRoutes = require('./routes/reportRoutes');
@@ -438,6 +437,7 @@ app.use('/api/mindmap', require('./routes/biDirectionalMindMapRoutes'));
 app.use('/api/language', require('./routes/languageRoutes'));
 app.use('/api/squads', squadRoutes);
 app.use('/api/study', fatigueRoutes);
+app.use('/api/documents/processing', documentProcessingRoutes);
 app.use('/api/documents', pdfAnnotationRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/subjective-grader', require('./routes/subjectiveGraderRoutes'));

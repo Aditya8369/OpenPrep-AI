@@ -1,3 +1,4 @@
+const twoFactorService = require('../services/twoFactorService');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -347,6 +348,22 @@ exports.login = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
+    if (user.twoFactorEnabled) {
+      const tempToken = jwt.sign(
+        { id: user.id, email: user.email, purpose: '2fa_challenge' },
+        jwtSecret || 'secret',
+        { expiresIn: '5m' }
+      );
+      return res.status(200).json({
+        success: true,
+        requires2FA: true,
+        tempToken,
+        email: user.email,
+        message: 'Two-factor authentication required',
+      });
+    }
+
+
     // Create multi-device session & detect impossible travel anomalies
     let session = null;
     let impossibleTravelAlert = null;
@@ -384,69 +401,61 @@ exports.login = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
-// @desc    Setup 2FA (Generate secret and backup codes)
-// @route   POST /api/auth/2fa/setup
+// @desc    Generate 2FA Secret, QR Code, and Backup Codes
+// @route   POST /api/auth/2fa/generate (alias: /api/auth/2fa/setup)
 // @access  Private
 // ---------------------------------------------------------------------------
-exports.setup2FA = async (req, res, next) => {
+exports.generate2FA = async (req, res, next) => {
   try {
     const user = await User.findByPk(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    const secret = speakeasy.generateSecret({ name: `OpenPrep-AI (${user.email})` });
-    const backupCodes = Array.from({ length: 8 }, () => crypto.randomBytes(4).toString('hex'));
+    const { secret, otpauthUrl, qrCodeDataUrl } = await twoFactorService.generateTwoFactorSecret(user.email);
+    const plainBackupCodes = twoFactorService.generateBackupCodes(8);
+    const hashedBackupCodes = await twoFactorService.hashBackupCodes(plainBackupCodes);
 
-    user.twoFactorAuth = {
-      enabled: false,
-      secret: secret.base32,
-      backupCodes,
-    };
+    user.twoFactorSecret = secret;
+    user.twoFactorBackupCodes = hashedBackupCodes;
     await user.save();
-
-    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
 
     res.status(200).json({
       success: true,
-      secret: secret.base32,
-      qrCodeUrl,
-      backupCodes,
+      secret,
+      otpauthUrl,
+      qrCodeUrl: qrCodeDataUrl,
+      backupCodes: plainBackupCodes,
     });
   } catch (error) {
     next(error);
   }
 };
+exports.setup2FA = exports.generate2FA;
 
 // ---------------------------------------------------------------------------
-// @desc    Verify and Enable 2FA
-// @route   POST /api/auth/2fa/verify-setup
+// @desc    Verify Initial Code & Enable 2FA
+// @route   POST /api/auth/2fa/enable (alias: /api/auth/2fa/verify-setup)
 // @access  Private
 // ---------------------------------------------------------------------------
-exports.verifyAndEnable2FA = async (req, res, next) => {
+exports.enable2FA = async (req, res, next) => {
   try {
     const { token } = req.body;
-    const user = await User.findByPk(req.user.id);
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Verification code is required' });
+    }
 
-    if (!user || !user.twoFactorAuth || !user.twoFactorAuth.secret) {
+    const user = await User.findByPk(req.user.id);
+    if (!user || !user.twoFactorSecret) {
       return res.status(400).json({ success: false, error: '2FA setup has not been initiated' });
     }
 
-    const verified = speakeasy.totp.verify({
-      secret: user.twoFactorAuth.secret,
-      encoding: 'base32',
-      token,
-      window: 1,
-    });
-
+    const verified = twoFactorService.verifyTwoFactorToken(user.twoFactorSecret, token);
     if (!verified) {
       return res.status(400).json({ success: false, error: 'Invalid verification code' });
     }
 
-    user.twoFactorAuth = {
-      ...user.twoFactorAuth,
-      enabled: true,
-    };
+    user.twoFactorEnabled = true;
     await user.save();
 
     res.status(200).json({
@@ -457,94 +466,129 @@ exports.verifyAndEnable2FA = async (req, res, next) => {
     next(error);
   }
 };
+exports.verifyAndEnable2FA = exports.enable2FA;
 
 // ---------------------------------------------------------------------------
-// @desc    Verify TOTP or Backup Code during Login
-// @route   POST /api/auth/2fa/verify-login
+// @desc    Verify TOTP or Backup Code during Login Challenge
+// @route   POST /api/auth/2fa/verify (alias: /api/auth/2fa/verify-login)
 // @access  Public
 // ---------------------------------------------------------------------------
-exports.verifyLogin2FA = async (req, res, next) => {
+exports.verify2FA = async (req, res, next) => {
   try {
-    const { email, token } = req.body;
-    const user = await User.findOne({ where: { email } });
+    const { email, tempToken, token } = req.body;
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Verification code is required' });
+    }
 
-    if (!user || !user.twoFactorAuth || !user.twoFactorAuth.enabled) {
+    let user = null;
+    if (tempToken) {
+      try {
+        const decoded = jwt.verify(tempToken, jwtSecret || 'secret');
+        if (decoded.id) {
+          user = await User.findByPk(decoded.id);
+        }
+      } catch (e) {
+        return res.status(401).json({ success: false, error: '2FA session expired. Please sign in again.' });
+      }
+    }
+
+    if (!user && email) {
+      user = await User.findOne({ where: { email } });
+    }
+
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
       return res.status(400).json({ success: false, error: 'Invalid request or 2FA not enabled' });
     }
 
-    let verified = speakeasy.totp.verify({
-      secret: user.twoFactorAuth.secret,
-      encoding: 'base32',
-      token,
-      window: 1,
-    });
+    // 1. Verify TOTP token
+    let verified = twoFactorService.verifyTwoFactorToken(user.twoFactorSecret, token);
+    let usedBackupCode = false;
 
-    // Check backup codes if TOTP fails
-    if (!verified && user.twoFactorAuth.backupCodes?.includes(token)) {
-      verified = true;
-      // Remove used backup code
-      user.twoFactorAuth.backupCodes = user.twoFactorAuth.backupCodes.filter(code => code !== token);
-      await user.save();
+    // 2. If TOTP fails, check backup codes
+    if (!verified && Array.isArray(user.twoFactorBackupCodes)) {
+      const backupResult = await twoFactorService.verifyAndConsumeBackupCode(token, user.twoFactorBackupCodes);
+      if (backupResult.valid) {
+        verified = true;
+        usedBackupCode = true;
+        user.twoFactorBackupCodes = backupResult.remainingHashedCodes;
+        await user.save();
+      }
     }
 
     if (!verified) {
       return res.status(401).json({ success: false, error: 'Invalid 2FA code or backup code' });
     }
 
-    // Issue tokens upon successful 2FA verification
-    const tokenFamily = generateTokenFamily();
-    const accessToken = generateAccessToken(user.id);
-    const refreshResult = await generateRefreshToken(user, tokenFamily);
-    const refreshToken = refreshResult.rawToken;
+    // Create session and issue tokens upon successful 2FA
+    let session = null;
+    try {
+      const { createSession } = require('../middleware/sessionManager');
+      const sessionResult = await createSession(req, user.id, null, { userEmail: user.email });
+      session = sessionResult.session;
+    } catch (sessionErr) {}
 
-    setRefreshTokenCookie(res, refreshToken);
+    const sessionId = session ? session.id : null;
+    const accessToken = generateAccessToken(user.id, sessionId);
+
     res.cookie('token', accessToken, getAccessTokenCookieOptions());
+    if (sessionId) {
+      res.cookie('sessionId', sessionId, getAuthCookieOptions());
+    }
 
     res.status(200).json({
       success: true,
       token: accessToken,
-      refreshToken,
+      sessionId,
+      usedBackupCode,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-        isEmailVerified: user.isEmailVerified,
       },
     });
   } catch (error) {
     next(error);
   }
 };
+exports.verifyLogin2FA = exports.verify2FA;
 
-/**
- * @swagger
- * /api/auth/me:
- *   get:
- *     summary: Retrieve currently authenticated user profile
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: User profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *       401:
- *         description: Not authenticated
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
+// ---------------------------------------------------------------------------
+// @desc    Disable 2FA (Requires Password Confirmation)
+// @route   POST /api/auth/2fa/disable
+// @access  Private
+// ---------------------------------------------------------------------------
+exports.disable2FA = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, error: 'Password confirmation is required to disable 2FA' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'Incorrect password' });
+    }
+
+    user.twoFactorEnabled = false;
+    user.twoFactorSecret = null;
+    user.twoFactorBackupCodes = [];
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Two-factor authentication successfully disabled',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getMe = async (req, res, next) => {
   try {
     const user = await User.findByPk(req.user.id, {

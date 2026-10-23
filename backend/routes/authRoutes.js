@@ -327,4 +327,16 @@ router.post('/passkey/login-verify', verifyLogin);
 router.get('/passkey/list', protect, listPasskeys);
 router.delete('/passkey/:id', protect, deletePasskey);
 
+
+// ---------------------------------------------------------------------------
+// Two-Factor Authentication (2FA) Routes (#2361)
+// ---------------------------------------------------------------------------
+router.post('/2fa/generate', protect, generate2FA);
+router.post('/2fa/setup', protect, generate2FA);
+router.post('/2fa/enable', protect, enable2FA);
+router.post('/2fa/verify-setup', protect, enable2FA);
+router.post('/2fa/verify', loginSmartLimiter, verify2FA);
+router.post('/2fa/verify-login', loginSmartLimiter, verify2FA);
+router.post('/2fa/disable', protect, disable2FA);
+
 module.exports = router;

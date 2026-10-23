@@ -1533,4 +1533,112 @@ exports.generateDistractors = async (req, res, next) => {
   }
 };
 
+// @desc    Submit detected OMR bubble answer sheet for automated grading
+// @route   POST /api/quizzes/:id/submit-omr
+// @access  Private
+exports.submitOmrAttempt = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { detectedAnswers = {}, qrMetadata = {}, timeSpent = 0 } = req.body;
+
+    const quiz = await Quiz.findByPk(id);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: 'Quiz not found' });
+    }
+
+    const questions = quiz.questions || [];
+    let correctCount = 0;
+    let incorrectCount = 0;
+    let unattemptedCount = 0;
+    const breakdown = [];
+    const missedTopics = [];
+
+    const optLetters = ['A', 'B', 'C', 'D'];
+
+    questions.forEach((q, idx) => {
+      const qNum = idx + 1;
+      const studentChoice = detectedAnswers[qNum] !== undefined ? detectedAnswers[qNum] : detectedAnswers[String(qNum)];
+
+      let correctLetter = 'A';
+      if (typeof q.correctAnswer === 'number') {
+        correctLetter = optLetters[q.correctAnswer] || 'A';
+      } else if (typeof q.correctAnswer === 'string') {
+        correctLetter = q.correctAnswer.toUpperCase();
+      }
+
+      const isAttempted = studentChoice !== null && studentChoice !== undefined && studentChoice !== '' && studentChoice !== 'MULTIPLE';
+      const isCorrect = isAttempted && (studentChoice.toUpperCase() === correctLetter);
+
+      if (!isAttempted) {
+        unattemptedCount++;
+      } else if (isCorrect) {
+        correctCount++;
+      } else {
+        incorrectCount++;
+        if (q.topic || q.subject) {
+          missedTopics.push(q.topic || q.subject);
+        }
+      }
+
+      breakdown.push({
+        questionNumber: qNum,
+        questionId: q._id || q.id || String(qNum),
+        studentAnswer: studentChoice,
+        correctAnswer: correctLetter,
+        isCorrect,
+        topic: q.topic || 'General',
+      });
+    });
+
+    const totalQuestions = questions.length || Object.keys(detectedAnswers).length || 1;
+    const score = correctCount;
+    const accuracyPercentage = Math.round((correctCount / totalQuestions) * 100);
+
+    return res.status(200).json({
+      success: true,
+      quizId: id,
+      score,
+      totalQuestions,
+      correctCount,
+      incorrectCount,
+      unattemptedCount,
+      accuracyPercentage,
+      timeSpent,
+      breakdown,
+      weaknessSummary: {
+        flaggedTopics: [...new Set(missedTopics)],
+        weaknessAlert: missedTopics.length > 0 ? `Focus recommended on: ${[...new Set(missedTopics)].slice(0, 3).join(', ')}` : null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc    Download printable OMR sheet template customized for quiz
+// @route   GET /api/quizzes/:id/omr-template
+// @access  Private
+exports.getOmrTemplate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { count = 50 } = req.query;
+    const { generateOmrTemplate } = require('../services/omrTemplateService');
+
+    const quiz = await Quiz.findByPk(id);
+    const pdfBuffer = await generateOmrTemplate(id, {
+      questionCount: quiz?.questions?.length || count,
+      examCode: quiz?.title || 'OPENPREP-OMR',
+      answers: (quiz?.questions || []).map((q) => q.correctAnswer),
+      studentInfo: { id: req.user?.id || 'STUDENT' },
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="OMR_Quiz_${id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+};
+
+
 

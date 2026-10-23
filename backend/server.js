@@ -277,7 +277,8 @@ app.use((req, res, next) => {
 });
 
 // Prometheus Metrics Exporter Endpoint
-app.get('/metrics', getMetrics);
+const { metricsAuthMiddleware } = require('./services/metricsService');
+app.get('/metrics', metricsAuthMiddleware, getMetrics);
 
 // CSRF Token Endpoint for frontend clients
 app.get('/api/csrf-token', (req, res) => {
@@ -453,6 +454,7 @@ app.use('/api/documents/processing', documentProcessingRoutes);
 app.use('/api/documents', pdfAnnotationRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/subjective-grader', require('./routes/subjectiveGraderRoutes'));
+app.use('/api/evaluator', require('./routes/evaluatorRoutes'));
 app.use('/api/study-plans', studyPlanRoutes);
 app.use('/api/study-schedule', adaptiveScheduleRoutes);
 app.use('/api/milestones', milestoneRoutes);
@@ -703,6 +705,7 @@ require('./sockets/squadHandler')(io);
 require('./sockets/flashcardCollaborationHandler')(io);
 require('./services/audioSignalingSocket').init(io);
 require('./services/codeRoomSocketService')(io);
+require('./sockets/studyRoomSocket')(io);
 // Authenticate Socket.io connections
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;

@@ -74,6 +74,7 @@ const exposeMetrics = async (req, res) => {
 module.exports = {
   metricsMiddleware,
   exposeMetrics,
+  getMetrics: exposeMetrics,
   aiTokenUsage,
   activeWebsocketConnections,
   dbPoolActiveConnections,

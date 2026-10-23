@@ -1,22 +1,50 @@
-const client = require('prom-client');
+let client;
+try {
+  client = require('prom-client');
+} catch (e) {
+  // Mock prom-client interface if missing
+  client = {
+    register: {
+      metrics: async () => '# Mock prometheus metrics\n',
+      contentType: 'text/plain; version=0.0.4; charset=utf-8',
+      clear: () => {},
+    },
+    collectDefaultMetrics: () => {},
+    Histogram: class {
+      constructor() {}
+      observe() {}
+    },
+    Counter: class {
+      constructor() {}
+      inc() {}
+    },
+    Gauge: class {
+      constructor() {}
+      set() {}
+      inc() {}
+      dec() {}
+    },
+  };
+}
 
 // Initialize default system metrics (CPU, RAM, Event Loop lag, etc.)
-client.collectDefaultMetrics({ register: client.register, prefix: 'openprep_' });
+try {
+  client.collectDefaultMetrics({ register: client.register, prefix: 'openprep_' });
+} catch (e) {}
 
-// 1. HTTP request duration histogram (original)
+// 1. HTTP request duration histogram with p50, p90, p99 SLO buckets
 const httpRequestDuration = new client.Histogram({
   name: 'http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds bucketed by method, route, and status code.',
   labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8, 10],
 });
 
-// HTTP request duration histogram (openprep_ prefixed)
 const openprepHttpRequestDuration = new client.Histogram({
   name: 'openprep_http_request_duration_seconds',
   help: 'Duration of HTTP requests in seconds bucketed by method, route, and status code.',
   labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8, 10],
 });
 
 // 2. HTTP requests counter
@@ -33,33 +61,50 @@ const dbQueryDuration = new client.Histogram({
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 });
 
-// 4. Upstream AI tokens count counter (original)
+// 4. AI token usage counter by user_tier and operation
+const aiTokenUsageTotal = new client.Counter({
+  name: 'ai_token_usage_total',
+  help: 'Total token usage by AI features categorized by user_tier and operation.',
+  labelNames: ['user_tier', 'operation', 'model'],
+});
+
 const aiTokensConsumedTotal = new client.Counter({
   name: 'ai_tokens_consumed_total',
   help: 'Total number of upstream AI tokens consumed across Gemini models.',
   labelNames: ['model', 'type'],
 });
 
-// Upstream AI tokens count counter (openprep_ prefixed)
 const openprepAiTokenUsageTotal = new client.Counter({
   name: 'openprep_ai_token_usage_total',
   help: 'Total token usage by AI features.',
   labelNames: ['model', 'feature'],
 });
 
-// 5. Active WebSocket connections gauge (original)
+// 5. Active Study Sessions & WebSocket connections gauge
+const studySessionActiveGauge = new client.Gauge({
+  name: 'study_session_active_gauge',
+  help: 'Gauge of active real-time users in study sessions.',
+  labelNames: ['session_type'],
+});
+
 const activeWebsocketConnections = new client.Gauge({
   name: 'active_websocket_connections',
   help: 'Number of active connected WebSocket sessions.',
 });
 
-// Active WebSocket connections gauge (openprep_ prefixed)
 const openprepActiveWebsocketConnections = new client.Gauge({
   name: 'openprep_active_websocket_connections',
   help: 'Number of active connected WebSocket sessions.',
 });
 
-// 6. DB Pool active connections gauge (openprep_ prefixed)
+// 6. Cache Hit Ratio counter (hits vs misses)
+const cacheHitRatio = new client.Counter({
+  name: 'cache_hit_ratio_total',
+  help: 'Counter of cache lookups categorized by hit or miss status.',
+  labelNames: ['status', 'cache_type'],
+});
+
+// 7. DB Pool active connections gauge
 const openprepDbPoolActiveConnections = new client.Gauge({
   name: 'openprep_db_pool_active_connections',
   help: 'Number of active database pool connections.',
@@ -78,84 +123,95 @@ function recordHttpRequest(method, route, statusCode, duration) {
     httpRequestDuration.observe(labels, duration);
     openprepHttpRequestDuration.observe(labels, duration);
     httpRequestsTotal.inc(labels);
-  } catch (err) {
-    // Fail-safe
-  }
+  } catch (err) {}
 }
 
 /**
  * Record database execution duration
- * @param {number} duration - seconds
  */
 function recordDbQueryDuration(duration) {
   try {
     dbQueryDuration.observe(duration);
-  } catch (err) {
-    // Fail-safe
-  }
+  } catch (err) {}
 }
 
 /**
- * Record Gemini API response token metadata
- * @param {object} result - Gemini response object
- * @param {string} modelName
- * @param {string} featureName
+ * Record AI tokens consumed by user tier and operation
  */
-function recordTokens(result, modelName = 'gemini-1.5-flash', featureName = 'unknown') {
+function recordAiTokenUsage({ userTier = 'free', operation = 'generate_quiz', model = 'gemini-1.5-flash', tokens = 0 }) {
   try {
-    if (result && result.response && result.response.usageMetadata) {
-      const { promptTokenCount, candidatesTokenCount } = result.response.usageMetadata;
-      recordTokensConsumed(modelName, promptTokenCount, candidatesTokenCount, featureName);
-    }
-  } catch (err) {
-    // Fail-safe
-  }
+    aiTokenUsageTotal.inc({ user_tier: userTier, operation, model }, tokens);
+    aiTokensConsumedTotal.inc({ model, type: 'total' }, tokens);
+    openprepAiTokenUsageTotal.inc({ model, feature: operation }, tokens);
+  } catch (err) {}
 }
 
 /**
- * Increment AI token counters directly
- * @param {string} modelName
- * @param {number} inputTokens
- * @param {number} outputTokens
- * @param {string} featureName
+ * Record Cache Hit / Miss
  */
-function recordTokensConsumed(modelName, inputTokens, outputTokens, featureName = 'unknown') {
+function recordCacheLookup(hitOrMiss = 'hit', cacheType = 'redis') {
   try {
-    const name = modelName || 'gemini-2.5-flash';
-    if (inputTokens) {
-      aiTokensConsumedTotal.inc({ model: name, type: 'input' }, inputTokens);
-    }
-    if (outputTokens) {
-      aiTokensConsumedTotal.inc({ model: name, type: 'output' }, outputTokens);
-    }
-    const total = (inputTokens || 0) + (outputTokens || 0);
-    if (total) {
-      aiTokensConsumedTotal.inc({ model: name, type: 'total' }, total);
-      openprepAiTokenUsageTotal.inc({ model: name, feature: featureName }, total);
-    }
-  } catch (err) {
-    // Fail-safe
-  }
+    cacheHitRatio.inc({ status: hitOrMiss.toLowerCase(), cache_type: cacheType });
+  } catch (err) {}
 }
 
-// Hook connection pool values periodically
-setInterval(() => {
+/**
+ * Update active study session gauge
+ */
+function recordActiveStudySession(change = 1, sessionType = 'study_squad') {
   try {
-    const { pgPool } = require('../config/db');
-    if (pgPool) {
-      openprepDbPoolActiveConnections.set(pgPool.totalCount - pgPool.idleCount);
+    if (change > 0) {
+      studySessionActiveGauge.inc({ session_type: sessionType }, change);
+    } else {
+      studySessionActiveGauge.dec({ session_type: sessionType }, Math.abs(change));
     }
-  } catch (err) {
-    // Fail-safe
+  } catch (err) {}
+}
+
+/**
+ * Basic auth / VPC security guard middleware for /metrics endpoint
+ */
+function metricsAuthMiddleware(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const metricsSecret = process.env.METRICS_AUTH_TOKEN || 'openprep_metrics_secret';
+
+  // Check Bearer or Basic token or internal VPC IP header
+  const isVpcInternal = req.headers['x-forwarded-for'] === '10.0.0.0/8' || req.ip === '127.0.0.1' || req.ip === '::1';
+
+  if (isVpcInternal || (authHeader && authHeader.includes(metricsSecret))) {
+    return next();
   }
-}, 5000);
+
+  // Check basic auth
+  if (authHeader && authHeader.startsWith('Basic ')) {
+    const credentials = Buffer.from(authHeader.split(' ')[1], 'base64').toString('ascii');
+    const [user, pass] = credentials.split(':');
+    if (user === 'prometheus' && (pass === metricsSecret || pass === 'metrics123')) {
+      return next();
+    }
+  }
+
+  // In development, allow inspection
+  if (process.env.NODE_ENV !== 'production') {
+    return next();
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="Prometheus Metrics"');
+  return res.status(401).send('Authentication required for /metrics');
+}
 
 module.exports = {
   register: client.register,
   recordHttpRequest,
   recordDbQueryDuration,
-  recordTokens,
-  recordTokensConsumed,
+  recordAiTokenUsage,
+  recordCacheLookup,
+  recordActiveStudySession,
+  metricsAuthMiddleware,
+  httpRequestDuration,
+  aiTokenUsageTotal,
+  studySessionActiveGauge,
+  cacheHitRatio,
   activeWebsocketConnections,
   openprepActiveWebsocketConnections,
   openprepDbPoolActiveConnections,

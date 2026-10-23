@@ -1,0 +1,35 @@
+groups:
+  - name: openprep_slo_alerts
+    rules:
+      # SLO Alert 1: AI generation p95 latency > 8.0s over 5 minutes
+      - alert: AIGenerationHighLatencySLO
+        expr: histogram_quantile(0.95, sum(rate(openprep_http_request_duration_seconds_bucket{route=~".*generate.*|.*ai.*"}[5m])) by (le)) > 8.0
+        for: 5m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "AI Generation p95 latency breached SLO threshold (>8.0s)"
+          description: "The 95th percentile latency for Gemini AI endpoints has exceeded 8.0 seconds over the past 5 minutes."
+
+      # SLO Alert 2: HTTP 5xx error rate > 1.0% over 2 minutes
+      - alert: HighHttp5xxErrorRateSLO
+        expr: (sum(rate(http_requests_total{status_code=~"5.."}[2m])) / sum(rate(http_requests_total[2m]))) * 100 > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "HTTP 5xx error rate breached SLO threshold (>1.0%)"
+          description: "Over 1.0% of incoming HTTP requests resulted in server 5xx errors across the last 2 minutes."
+
+      # SLO Alert 3: Database connection pool exhaustion > 90% capacity
+      - alert: DatabaseConnectionPoolExhaustionSLO
+        expr: (openprep_db_pool_active_connections / 20) * 100 > 90
+        for: 1m
+        labels:
+          severity: critical
+          resource: database
+        annotations:
+          summary: "PostgreSQL connection pool near exhaustion (>90%)"
+          description: "Active database pool connections exceeded 90% of configured pool capacity for over 1 minute."

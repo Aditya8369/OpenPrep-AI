@@ -474,6 +474,11 @@ export const checkCalendarConflicts = (payload) =>
 export const getNextDueMicroCard = () => API.get('/micro/next-due-card');
 export const submitMicroAnswer = (payload) => API.post('/micro/submit-answer', payload);
 
+// ── Multi-Device Session Management APIs (#2326) ──────────────────────────
+export const getActiveSessions = () => API.get('/auth/sessions');
+export const revokeSession = (sessionId) => API.delete(`/auth/sessions/${sessionId}`);
+export const revokeAllOtherSessions = () => API.delete('/auth/sessions/others');
+
 export default API;
 
 

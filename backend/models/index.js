@@ -115,6 +115,7 @@ const User = require('./User');
 const UserBadge = require('./UserBadge');
 const UserPasskey = require('./UserPasskey');
 const UserProgress = require('./UserProgress');
+const UserSession = require('./UserSession');
 const VivaSession = require('./VivaSession');
 const WeeklyStudyReport = require('./WeeklyStudyReport');
 
@@ -449,6 +450,10 @@ BountyAnswer.belongsTo(BountyQuestion, { foreignKey: 'questionId', as: 'question
 User.hasMany(BountyAnswer, { foreignKey: 'userId', as: 'bountyAnswers', onDelete: 'CASCADE' });
 BountyAnswer.belongsTo(User, { foreignKey: 'userId', as: 'author' });
 
+// UserSession associations
+User.hasMany(UserSession, { foreignKey: 'userId', as: 'sessions', onDelete: 'CASCADE' });
+UserSession.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   sequelize,
   // The library namespace, so callers can reach Sequelize.Op without a
@@ -559,6 +564,7 @@ module.exports = {
   UserMilestone,
   UserPasskey,
   UserProgress,
+  UserSession,
   VivaSession,
   WeeklyStudyReport,
 };

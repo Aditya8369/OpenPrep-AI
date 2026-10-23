@@ -46,7 +46,12 @@ const { validateRequest, submitQuizSchema } = require('../middleware/validate');
 const checkOwnership = require('../middleware/checkOwnership');
 
 const router = express.Router();
-const { getNextAdaptiveQuestion } = require('../controllers/adaptiveQuizController');
+const {
+  getNextAdaptiveQuestion,
+  startAdaptiveQuiz,
+  submitAdaptiveResponse,
+  finishAdaptiveQuiz,
+} = require('../controllers/adaptiveQuizController');
 
 // Register solution explainer route
 router.get('/questions/:questionId/explanation', protect, aiLimiter, checkAiQuota, getEnhancedExplanation);
@@ -59,6 +64,11 @@ router.post('/generate-distractors', protect, aiLimiter, checkAiQuota, aiSanitiz
 router.get('/next', getNextAdaptiveQuestionEndpoint);
 router.get('/adaptive/next', getNextAdaptiveQuestionEndpoint);
 router.post('/adaptive/next-question', protect, aiLimiter, checkAiQuota, getNextAdaptiveQuestion);
+
+// 2PL-IRT Computerized Adaptive Testing (CAT) Endpoints
+router.post('/adaptive/start', protect, startAdaptiveQuiz);
+router.post('/adaptive/respond', protect, submitAdaptiveResponse);
+router.post('/adaptive/finish', protect, finishAdaptiveQuiz);
 
 /**
  * @swagger

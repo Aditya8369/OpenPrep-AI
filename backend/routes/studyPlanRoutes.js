@@ -15,6 +15,8 @@ const {
   getStudyPlan,
   getBurndown,
   getReadinessScore,
+  exportStudyPlanIcsWithRevisions,
+  getGoogleCalendarUrl,
 } = require('../controllers/studyPlanController');
 const { protect } = require('../middleware/auth');
 const { aiLimiter } = require('../middleware/rateLimiter');
@@ -117,9 +119,10 @@ router.get('/', protect, getStudyPlan);
  */
 
 router.post('/generate-ai', protect, aiLimiter, checkAiQuota, validateGenerateAIPlan, generateAIPlan);
-router.get('/:id/export-ics', protect, exportStudyPlanIcs);
-router.get('/:id/ics', protect, exportStudyPlanIcs);
+router.get('/:id/export-ics', protect, exportStudyPlanIcsWithRevisions);
+router.get('/:id/ics', protect, exportStudyPlanIcsWithRevisions);
 router.get('/:id/export-pdf', protect, exportStudyPlanPdf);
+router.get('/:id/google-calendar-url', protect, getGoogleCalendarUrl);
 
 /**
  * @swagger

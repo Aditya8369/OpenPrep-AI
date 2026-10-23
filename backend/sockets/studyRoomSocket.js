@@ -1,12 +1,22 @@
 /**
- * @fileoverview Socket.IO event handlers for the Collaborative Study Room.
- * Manages room joining, whiteboard stroke synchronization, and real-time chat with Redis session cache.
+ * @fileoverview Socket.IO event handlers for Collaborative Study Squads.
+ * Manages WebRTC audio mesh signaling, synchronized Pomodoro timer,
+ * doubt scratchpad, and participant presence up to 6 peers per pod.
  */
 
-const redisService = require('../services/redisService');
+let redisService;
+try {
+  redisService = require('../services/redisService');
+} catch (e) {
+  redisService = { isReady: false, client: null };
+}
 
 // Local fallback state
 const localRooms = new Map();
+const roomTimers = new Map(); // roomId -> { timerInterval, endsAt, durationSeconds, mode, status, startedAt }
+const roomScratchpads = new Map(); // roomId -> string
+
+const MAX_POD_MEMBERS = 6;
 
 // Every event this module registers on a client socket. cleanupSocket() tears
 // all of them down, so a new listener added below must be listed here too.
@@ -18,6 +28,14 @@ const ROOM_EVENTS = [
   'draw_stroke',
   'clear_whiteboard',
   'send_chat_message',
+  'room:join',
+  'room:leave',
+  'webrtc:signal',
+  'room:audio-status',
+  'room:timer-start',
+  'room:timer-pause',
+  'room:timer-sync-req',
+  'room:scratchpad-update',
   'disconnect',
 ];
 
@@ -36,7 +54,7 @@ async function getRoomParticipants(roomId) {
       console.error('[studyRoomSocket] Failed to fetch participants from Redis:', err.message);
     }
   }
-  
+
   // Local fallback
   const room = localRooms.get(roomId);
   return room ? Object.values(room.participants) : [];
@@ -80,6 +98,11 @@ async function removeRoomParticipant(roomId, userId) {
     delete room.participants[userId];
     if (Object.keys(room.participants).length === 0) {
       localRooms.delete(roomId);
+      // Clean up timer if empty
+      const t = roomTimers.get(roomId);
+      if (t && t.timerInterval) clearInterval(t.timerInterval);
+      roomTimers.delete(roomId);
+      roomScratchpads.delete(roomId);
     }
   }
 }
@@ -96,29 +119,31 @@ async function getWhiteboardStrokes(roomId) {
     }
   }
 
-  // Local fallback
   const room = localRooms.get(roomId);
   return room ? room.whiteboard : [];
 }
 
 // Helper to add whiteboard stroke
-async function addWhiteboardStroke(roomId, stroke) {
+async function addWhiteboardStroke(roomId, strokeData) {
   const key = `room:${roomId}:whiteboard`;
   if (redisService.isReady && redisService.client) {
     try {
-      await redisService.client.rpush(key, JSON.stringify(stroke));
-      await redisService.client.expire(key, 86400); // 24 hours expiry
+      await redisService.client.rpush(key, JSON.stringify(strokeData));
+      await redisService.client.ltrim(key, -1000, -1);
+      await redisService.client.expire(key, 86400);
       return;
     } catch (err) {
       console.error('[studyRoomSocket] Failed to save stroke to Redis:', err.message);
     }
   }
 
-  // Local fallback
-  if (!localRooms.has(roomId)) {
-    localRooms.set(roomId, { metadata: { roomId, createdAt: Date.now() }, participants: {}, whiteboard: [] });
+  const room = localRooms.get(roomId);
+  if (room) {
+    room.whiteboard.push(strokeData);
+    if (room.whiteboard.length > 1000) {
+      room.whiteboard.shift();
+    }
   }
-  localRooms.get(roomId).whiteboard.push(stroke);
 }
 
 // Helper to clear whiteboard
@@ -133,7 +158,6 @@ async function clearWhiteboard(roomId) {
     }
   }
 
-  // Local fallback
   const room = localRooms.get(roomId);
   if (room) {
     room.whiteboard = [];
@@ -141,186 +165,363 @@ async function clearWhiteboard(roomId) {
 }
 
 /**
- * Initializes Socket.IO event listeners for study room features.
+ * Returns current timer status for a room.
+ */
+function getRoomTimerState(roomId) {
+  const timer = roomTimers.get(roomId);
+  if (!timer) {
+    return {
+      status: 'idle',
+      mode: 'focus',
+      durationSeconds: 1500, // 25 min default
+      remainingSeconds: 1500,
+      startedAt: null,
+      endsAt: null,
+      serverTime: Date.now(),
+    };
+  }
+
+  let remaining = 0;
+  if (timer.status === 'running') {
+    remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+  } else {
+    remaining = timer.remainingSeconds || 0;
+  }
+
+  return {
+    status: timer.status,
+    mode: timer.mode,
+    durationSeconds: timer.durationSeconds,
+    remainingSeconds: remaining,
+    startedAt: timer.startedAt,
+    endsAt: timer.endsAt,
+    serverTime: Date.now(),
+  };
+}
+
+/**
+ * Starts or updates authoritative timer for a room.
+ */
+function startRoomTimer(io, roomId, { durationMinutes = 25, mode = 'focus' }) {
+  let existing = roomTimers.get(roomId);
+  if (existing && existing.timerInterval) {
+    clearInterval(existing.timerInterval);
+  }
+
+  const durationSeconds = durationMinutes * 60;
+  const startedAt = Date.now();
+  const endsAt = startedAt + durationSeconds * 1000;
+
+  const timerEntry = {
+    status: 'running',
+    mode,
+    durationSeconds,
+    remainingSeconds: durationSeconds,
+    startedAt,
+    endsAt,
+    timerInterval: null,
+  };
+
+  // Broadcast sync pulse every second for tight synchronization (<100ms drift)
+  timerEntry.timerInterval = setInterval(() => {
+    const currentRemaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+    timerEntry.remainingSeconds = currentRemaining;
+
+    if (currentRemaining <= 0) {
+      clearInterval(timerEntry.timerInterval);
+      timerEntry.status = 'completed';
+      io.to(roomId).emit('room:timer-completed', {
+        roomId,
+        mode,
+        completedAt: Date.now(),
+      });
+    }
+
+    io.to(roomId).emit('room:timer-sync', {
+      roomId,
+      status: timerEntry.status,
+      mode: timerEntry.mode,
+      durationSeconds: timerEntry.durationSeconds,
+      remainingSeconds: currentRemaining,
+      startedAt: timerEntry.startedAt,
+      endsAt: timerEntry.endsAt,
+      serverTime: Date.now(),
+    });
+  }, 1000);
+
+  roomTimers.set(roomId, timerEntry);
+
+  io.to(roomId).emit('room:timer-sync', {
+    roomId,
+    status: 'running',
+    mode,
+    durationSeconds,
+    remainingSeconds: durationSeconds,
+    startedAt,
+    endsAt,
+    serverTime: Date.now(),
+  });
+}
+
+function pauseRoomTimer(io, roomId) {
+  const timer = roomTimers.get(roomId);
+  if (timer && timer.status === 'running') {
+    if (timer.timerInterval) clearInterval(timer.timerInterval);
+    timer.status = 'paused';
+    timer.remainingSeconds = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+    io.to(roomId).emit('room:timer-sync', {
+      roomId,
+      status: 'paused',
+      mode: timer.mode,
+      durationSeconds: timer.durationSeconds,
+      remainingSeconds: timer.remainingSeconds,
+      serverTime: Date.now(),
+    });
+  }
+}
+
+/**
+ * Initializes Socket.IO event listeners for study room and WebRTC lounge features.
  * 
  * @param {Object} io - The Socket.IO server instance.
  */
 const initializeStudyRoomSockets = (io) => {
-    io.on('connection', (socket) => {
-        console.log(`[Socket] User connected: ${socket.id}`);
+  io.on('connection', (socket) => {
+    console.log(`[Socket] User connected: ${socket.id}`);
 
-        /**
-         * Cleans up room membership state and removes event listeners
-         * from a client socket to prevent memory and listener leaks.
-         */
-        const cleanupSocket = () => {
-            for (const event of ROOM_EVENTS) {
-                socket.removeAllListeners(event);
-            }
+    /**
+     * Cleans up room membership state and removes event listeners
+     */
+    const cleanupSocket = () => {
+      for (const event of ROOM_EVENTS) {
+        socket.removeAllListeners(event);
+      }
 
-            if (socket.heartbeatInterval) {
-                clearInterval(socket.heartbeatInterval);
-                socket.heartbeatInterval = null;
-            }
+      if (socket.heartbeatInterval) {
+        clearInterval(socket.heartbeatInterval);
+        socket.heartbeatInterval = null;
+      }
 
-            socket.data.roomId = null;
-            socket.data.username = null;
-        };
+      socket.data.roomId = null;
+      socket.data.username = null;
+    };
 
-        /**
-         * Adds the socket to a study room, records it as a participant, and
-         * hands the joiner the current participant list and whiteboard.
-         *
-         * Named rather than inline so the same handler can serve both the
-         * legacy `join_room` event and the namespaced `study:room:join`.
-         */
-        const handleJoinRoom = async ({ roomId, username }) => {
-            socket.join(roomId);
-            socket.data.roomId = roomId;
-            socket.data.username = username;
+    /**
+     * Study Squad WebRTC Lounge Join Handler
+     */
+    const handleLoungeJoin = async ({ roomId, username, audioState = {} }) => {
+      if (!roomId) return;
 
-            const participant = {
-                id: socket.id,
-                username: username || 'Anonymous'
-            };
-
-            await addRoomParticipant(roomId, socket.id, participant);
-
-            // Notify others in the room
-            socket.to(roomId).emit('user_joined', {
-                username,
-                userId: socket.id,
-                message: `${username} has joined the study room.`
-            });
-
-            // Fetch current room state (participants & whiteboard)
-            const users = await getRoomParticipants(roomId);
-            const whiteboard = await getWhiteboardStrokes(roomId);
-
-            // Send current room state
-            socket.emit('room_state_sync', {
-                users,
-                whiteboard,
-            });
-
-            console.log(`[Socket] User ${username} joined room ${roomId}`);
-        };
-
-        const handleLeaveRoom = async () => {
-            const roomId = socket.data.roomId;
-            const username = socket.data.username;
-
-            if (roomId) {
-                socket.leave(roomId);
-
-                // Without this the participant survives in Redis after an
-                // explicit leave and shows as a ghost in every later join.
-                await removeRoomParticipant(roomId, socket.id);
-
-                if (username) {
-                    socket.to(roomId).emit('user_left', {
-                        username,
-                        message: `${username} has left the study room.`
-                    });
-                }
-                cleanupSocket();
-            }
-        };
-
-        /**
-         * Event: User joins a specific study room.
-         * Payload: { roomId, username }
-         */
-        socket.on('join_room', handleJoinRoom);
-        socket.on('study:room:join', handleJoinRoom);
-
-        /**
-         * Event: Broadcast a whiteboard drawing stroke to the room.
-         * Payload: { roomId, strokeData: { x, y, color, width, tool, isEraser } }
-         */
-        socket.on('draw_stroke', async ({ roomId, strokeData }) => {
-            // Validate payload basics
-            if (!roomId || !strokeData || typeof strokeData.x !== 'number') {
-                return;
-            }
-
-            // Save stroke to cache
-            await addWhiteboardStroke(roomId, strokeData);
-
-            // Broadcast to everyone in the room EXCEPT the sender
-            socket.to(roomId).emit('receive_stroke', {
-                userId: socket.id,
-                strokeData,
-            });
+      const currentPeers = await getRoomParticipants(roomId);
+      if (currentPeers.length >= MAX_POD_MEMBERS && !currentPeers.find(p => p.id === socket.id)) {
+        socket.emit('room:full', {
+          roomId,
+          message: `Study pod ${roomId} is at maximum capacity (6 peers).`,
         });
+        return;
+      }
 
-        /**
-         * Event: Clear the whiteboard for all users in the room.
-         * Payload: { roomId }
-         */
-        socket.on('clear_whiteboard', async ({ roomId }) => {
-            if (!roomId) return;
+      socket.join(roomId);
+      socket.data.roomId = roomId;
+      socket.data.username = username || 'Student';
 
-            // Clear in cache
-            await clearWhiteboard(roomId);
+      const participant = {
+        id: socket.id,
+        username: socket.data.username,
+        audioState: {
+          isMuted: audioState.isMuted ?? false,
+          isSpeaking: false,
+          isDeafened: audioState.isDeafened ?? false,
+        },
+      };
 
-            socket.to(roomId).emit('whiteboard_cleared');
-        });
+      await addRoomParticipant(roomId, socket.id, participant);
 
-        /**
-         * Event: Send a chat message to the room.
-         * Payload: { roomId, username, message, timestamp }
-         */
-        socket.on('send_chat_message', ({ roomId, username, message, timestamp }) => {
-            if (!roomId || !message.trim()) return;
+      // Notify other peers in the room
+      socket.to(roomId).emit('room:peer-joined', {
+        peerId: socket.id,
+        participant,
+      });
 
-            const chatPayload = {
-                id: Date.now().toString(),
-                userId: socket.id,
-                username,
-                message: message.trim(),
-                timestamp,
-            };
-            io.to(roomId).emit('receive_chat_message', chatPayload);
-        });
+      // Send join response with all current peers, authoritative timer, and scratchpad
+      const allPeers = await getRoomParticipants(roomId);
+      socket.emit('room:joined', {
+        roomId,
+        peerId: socket.id,
+        peers: allPeers,
+        timerState: getRoomTimerState(roomId),
+        scratchpad: roomScratchpads.get(roomId) || '',
+      });
+    };
 
-        /**
-         * Event: Heartbeat checks for socket connectivity
-         */
-        socket.on('study:room:heartbeat', () => {
-            socket.emit('study:room:heartbeat_ack');
-        });
-
-        /**
-         * Event: Explicit study room leave
-         */
-        socket.on('study:room:leave', handleLeaveRoom);
-
-        /**
-         * Event: User disconnects or leaves the room.
-         */
-        socket.on('disconnect', async () => {
-            const roomId = socket.data.roomId;
-            const username = socket.data.username;
-
-            if (roomId) {
-                // Remove from cache
-                await removeRoomParticipant(roomId, socket.id);
-
-                if (username) {
-                    socket.to(roomId).emit('user_left', {
-                        username,
-                        message: `${username} has left the study room.`
-                    });
-                }
-            }
-            cleanupSocket();
-            console.log(`[Socket] User disconnected: ${socket.id}`);
-        });
+    /**
+     * WebRTC SDP / ICE Candidate Relay
+     */
+    socket.on('webrtc:signal', ({ targetPeerId, signal }) => {
+      if (!targetPeerId || !signal) return;
+      socket.to(targetPeerId).emit('webrtc:signal', {
+        senderPeerId: socket.id,
+        signal,
+      });
     });
+
+    /**
+     * Microphone / Audio Status changes
+     */
+    socket.on('room:audio-status', async ({ roomId, audioState }) => {
+      if (!roomId || !audioState) return;
+      const room = localRooms.get(roomId);
+      if (room && room.participants[socket.id]) {
+        room.participants[socket.id].audioState = {
+          ...room.participants[socket.id].audioState,
+          ...audioState,
+        };
+      }
+      socket.to(roomId).emit('room:peer-audio-status', {
+        peerId: socket.id,
+        audioState,
+      });
+    });
+
+    /**
+     * Authoritative Timer Events
+     */
+    socket.on('room:timer-start', ({ roomId, durationMinutes, mode }) => {
+      if (!roomId) return;
+      startRoomTimer(io, roomId, { durationMinutes, mode });
+    });
+
+    socket.on('room:timer-pause', ({ roomId }) => {
+      if (!roomId) return;
+      pauseRoomTimer(io, roomId);
+    });
+
+    socket.on('room:timer-sync-req', ({ roomId }) => {
+      if (!roomId) return;
+      socket.emit('room:timer-sync', {
+        roomId,
+        ...getRoomTimerState(roomId),
+      });
+    });
+
+    /**
+     * Doubt Scratchpad Synchronization
+     */
+    socket.on('room:scratchpad-update', ({ roomId, content }) => {
+      if (!roomId) return;
+      roomScratchpads.set(roomId, content);
+      socket.to(roomId).emit('room:scratchpad-updated', {
+        roomId,
+        content,
+        updatedBy: socket.data.username || socket.id,
+      });
+    });
+
+    /**
+     * General / Legacy Room Join
+     */
+    const handleJoinRoom = async ({ roomId, username }) => {
+      await handleLoungeJoin({ roomId, username });
+
+      socket.to(roomId).emit('user_joined', {
+        username: socket.data.username,
+        userId: socket.id,
+        message: `${socket.data.username} has joined the study room.`,
+      });
+
+      const users = await getRoomParticipants(roomId);
+      const whiteboard = await getWhiteboardStrokes(roomId);
+
+      socket.emit('room_state_sync', {
+        users,
+        whiteboard,
+      });
+    };
+
+    const handleLeaveRoom = async () => {
+      const roomId = socket.data.roomId;
+      const username = socket.data.username;
+
+      if (roomId) {
+        socket.leave(roomId);
+        await removeRoomParticipant(roomId, socket.id);
+
+        socket.to(roomId).emit('room:peer-left', {
+          peerId: socket.id,
+          username,
+        });
+
+        if (username) {
+          socket.to(roomId).emit('user_left', {
+            username,
+            message: `${username} has left the study room.`,
+          });
+        }
+        cleanupSocket();
+      }
+    };
+
+    socket.on('join_room', handleJoinRoom);
+    socket.on('study:room:join', handleJoinRoom);
+    socket.on('room:join', handleLoungeJoin);
+    socket.on('room:leave', handleLeaveRoom);
+    socket.on('study:room:leave', handleLeaveRoom);
+
+    socket.on('draw_stroke', async ({ roomId, strokeData }) => {
+      if (!roomId || !strokeData || typeof strokeData.x !== 'number') return;
+      await addWhiteboardStroke(roomId, strokeData);
+      socket.to(roomId).emit('receive_stroke', {
+        userId: socket.id,
+        strokeData,
+      });
+    });
+
+    socket.on('clear_whiteboard', async ({ roomId }) => {
+      if (!roomId) return;
+      await clearWhiteboard(roomId);
+      socket.to(roomId).emit('whiteboard_cleared');
+    });
+
+    socket.on('send_chat_message', ({ roomId, username, message, timestamp }) => {
+      if (!roomId || !message.trim()) return;
+      const chatPayload = {
+        id: Date.now().toString(),
+        userId: socket.id,
+        username,
+        message: message.trim(),
+        timestamp,
+      };
+      io.to(roomId).emit('receive_chat_message', chatPayload);
+    });
+
+    socket.on('study:room:heartbeat', () => {
+      socket.emit('study:room:heartbeat_ack');
+    });
+
+    socket.on('disconnect', async () => {
+      const roomId = socket.data.roomId;
+      const username = socket.data.username;
+
+      if (roomId) {
+        await removeRoomParticipant(roomId, socket.id);
+        socket.to(roomId).emit('room:peer-left', {
+          peerId: socket.id,
+          username,
+        });
+        if (username) {
+          socket.to(roomId).emit('user_left', {
+            username,
+            message: `${username} has left the study room.`,
+          });
+        }
+      }
+      cleanupSocket();
+    });
+  });
 };
 
 module.exports = initializeStudyRoomSockets;
-// The in-memory fallback map was renamed to localRooms; keep exposing it under
-// the original `activeRooms` name so the public surface stays stable.
 module.exports.activeRooms = localRooms;
+module.exports.getRoomTimerState = getRoomTimerState;
+module.exports.startRoomTimer = startRoomTimer;
+module.exports.pauseRoomTimer = pauseRoomTimer;

@@ -25,6 +25,8 @@ const {
   getNextAdaptiveQuestionEndpoint,
   evaluateDistractors,
   generateDistractors,
+  submitOmrAttempt,
+  getOmrTemplate,
 } = require('../controllers/quizController');
 const { generateQuizFromPdf } = require('../controllers/pdfQuizController');
 const { protect } = require('../middleware/auth');
@@ -619,6 +621,8 @@ router.get('/:id', protect, checkOwnership('Quiz'), getQuizDetails);
  */
 
 router.post('/:id/submit', protect, validateRequest(submitQuizSchema), submitQuizAttempt);
+router.post('/:id/submit-omr', protect, submitOmrAttempt);
+router.get('/:id/omr-template', protect, getOmrTemplate);
 
 /**
  * @swagger

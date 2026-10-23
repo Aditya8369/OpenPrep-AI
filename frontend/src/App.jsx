@@ -507,6 +507,30 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/formula-scratchpad"
+            element={
+              <ProtectedRoute>
+                <FormulaScratchpad />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graphing-calculator"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graph-sandbox"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/study-goals"

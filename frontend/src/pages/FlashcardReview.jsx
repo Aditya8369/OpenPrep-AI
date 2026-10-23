@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import MathRenderer from '../components/common/MathRenderer';
+import ClozeMathRenderer from '../components/common/ClozeMathRenderer';
 import API from '../services/api';
 import { db } from '../services/db.js';
 import useVoiceControl from '../hooks/useVoiceControl';
@@ -900,7 +901,7 @@ useEffect(() => {
               </div>
 
               <h3 className="text-2xl md:text-3xl font-bold font-inter text-neutral-800 dark:text-neutral-100 text-center leading-snug">
-                <MathRenderer text={currentCard.front} />
+                <ClozeMathRenderer text={currentCard.front} mode="question" />
               </h3>
               
               <div className="absolute bottom-6 flex items-center text-sm font-medium text-neutral-400 opacity-70 group-hover:opacity-100 transition-opacity">
@@ -966,7 +967,7 @@ useEffect(() => {
 
               <div className="flex-1 w-full flex flex-col items-center justify-center">
                 <p className="text-xl md:text-2xl text-neutral-800 dark:text-neutral-200 font-inter leading-relaxed text-center">
-                  <MathRenderer text={currentCard.back} />
+                  <ClozeMathRenderer text={currentCard.back} mode="answer" />
                 </p>
                 {currentCard.sourceUrl && currentCard.timestampSeconds !== undefined && currentCard.timestampSeconds !== null && (
                   <a 

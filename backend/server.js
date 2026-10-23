@@ -65,6 +65,7 @@ if (!process.env.RECAPTCHA_SECRET_KEY) {
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const academicRoutes = require('./routes/academicRoutes');
+const syllabusRoutes = require('./routes/syllabusRoutes');
 const pyqRoutes = require('./routes/pyqRoutes');
 const studyPlanRoutes = require('./routes/studyPlanRoutes');
 const milestoneRoutes = require('./routes/milestoneRoutes');
@@ -433,6 +434,7 @@ app.use('/api/session', sessionRoutes);
 app.use('/session', sessionRoutes);
 app.post('/api/session/keepalive', protect, require('./controllers/authController').keepalive);
 app.use('/api/academic', academicRoutes);
+app.use('/api/syllabus', syllabusRoutes);
 // 1. Mount the Previous Year Questions (PYQ) Router on the canonical plural path
 app.use('/api/pyqs', pyqRoutes);
 

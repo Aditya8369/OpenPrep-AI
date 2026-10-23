@@ -8,16 +8,21 @@ const {
   generateNotesForGap,
   getSyllabusCatalog,
   updateMastery,
-  getProgress
+  getProgress,
 } = require('../controllers/syllabusController');
+const {
+  uploadPdfSyllabus,
+  getSyllabusDag,
+  updateTopicStatus,
+} = require('../controllers/syllabusDagController');
 
 const router = express.Router();
 
 // Configure multer for PDF uploads
 const upload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB limit for multi-part syllabi
   fileFilter(req, file, cb) {
-    if (!file.originalname.match(/\.(pdf)$/)) {
+    if (!file.originalname.match(/\.(pdf)$/i)) {
       return cb(new Error('Please upload a PDF document.'));
     }
     cb(null, true);
@@ -25,8 +30,43 @@ const upload = multer({
 });
 
 /**
+ * @route   POST /api/syllabus/upload-pdf
+ * @desc    Upload single or multi-part syllabus PDF documents and generate prerequisite DAG
+ * @access  Private
+ */
+router.post('/upload-pdf', protect, (req, res, next) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    return uploadPdfSyllabus(req, res, next);
+  });
+});
+
+/**
+ * @route   GET /api/syllabus/:id/dag
+ * @desc    Get topic prerequisite Directed Acyclic Graph (DAG) for a syllabus
+ * @access  Private
+ */
+router.get('/:id/dag', protect, getSyllabusDag);
+
+/**
+ * @route   PATCH /api/syllabus/node/:id/status
+ * @desc    Update topic completion status and unlock downstream dependency nodes
+ * @access  Private
+ */
+router.patch('/node/:id/status', protect, updateTopicStatus);
+
+/**
+ * @route   PATCH /api/syllabus/:syllabusId/node/:nodeId/status
+ * @desc    Update topic completion status within specific syllabus
+ * @access  Private
+ */
+router.patch('/:syllabusId/node/:nodeId/status', protect, updateTopicStatus);
+
+/**
  * @route   POST /api/syllabus/upload
- * @desc    Upload and parse a PDF syllabus file
+ * @desc    Upload and parse a single PDF syllabus file
  * @access  Private
  */
 router.post('/upload', protect, upload.single('syllabus'), uploadSyllabus);

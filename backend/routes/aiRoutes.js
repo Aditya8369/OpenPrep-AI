@@ -19,6 +19,7 @@ const adminAuth = requireAdmin;
 const { aiLimiter } = require('../middleware/rateLimiter');
 const { checkAiQuota } = require('../middleware/aiQuotaMiddleware');
 const { aiSanitizer } = require('../middleware/aiSanitizer');
+const { promptGuardMiddleware, evaluatePromptSafety } = require('../services/promptGuardService');
 const { validateGenerateMindMap } = require('../middleware/validators');
 
 const router = express.Router();
@@ -246,4 +247,12 @@ router.post(
 router.get('/cache/stats', auth, aiController.getCacheStats);
 router.post('/cache/cleanup', auth, adminAuth, aiController.clearExpiredCache);
 router.get('/artifacts/:artifactId/history', aiController.getArtifactHistory);
+
+// Prompt safety evaluation endpoint
+router.post('/guard/evaluate', protect, (req, res) => {
+  const { prompt } = req.body;
+  const result = evaluatePromptSafety(prompt);
+  return res.status(200).json({ success: true, ...result });
+});
+
 module.exports = router;

@@ -235,10 +235,82 @@ function buildMisconceptionHints(issues = []) {
   return `${problems}Rewrite the wrong options following these guidelines:\n${guidelines}`;
 }
 
+function isUsableReplacement(original, replacement) {
+  if (!replacement || typeof replacement !== 'object') return false;
+  if (typeof replacement.questionText !== 'string' || !replacement.questionText.trim()) {
+    return false;
+  }
+  const { options } = replacement;
+  if (!Array.isArray(options) || options.length !== original.options.length) return false;
+  if (!options.every((opt) => typeof opt === 'string' && opt.trim())) return false;
+  if (new Set(options.map(normalise)).size !== options.length) return false;
+  const answer = Number(replacement.correctAnswer);
+  return Number.isInteger(answer) && answer >= 0 && answer < options.length;
+}
+
+/**
+ * Scores every MCQ in a generated quiz and asks for one batched rewrite of the
+ * weak ones. A rewrite is only kept when it is well formed and scores higher
+ * than the question it replaces. Any error in this step is logged and the
+ * original questions are returned, so it can never fail quiz generation.
+ *
+ * @param {Array<Object>} questions - quiz questions ({ questionText, options, correctAnswer index, explanation })
+ * @param {Function} regenerateWeak - async ([{ question, issues }]) => Array of replacement questions in the same order
+ * @param {Object} [opts]
+ * @param {number} [opts.maxRegenerations=5] - most questions sent for a rewrite per quiz
+ * @param {Object} [opts.logger]
+ * @returns {Promise<Array<Object>>}
+ */
+async function refineWeakQuestions(questions, regenerateWeak, opts = {}) {
+  const { maxRegenerations = 5, logger = require('../utils/logger') } = opts;
+  if (!Array.isArray(questions) || typeof regenerateWeak !== 'function') return questions;
+
+  try {
+    const weak = [];
+    questions.forEach((question, index) => {
+      if (!question || !Array.isArray(question.options) || question.options.length < 2) return;
+      const quality = scoreDistractorQuality(question);
+      if (!quality.passes)
+        weak.push({ index, question, issues: quality.issues, score: quality.score });
+    });
+    if (weak.length === 0) return questions;
+
+    // weakest first, so the cap spends the one rewrite call where it helps most
+    const batch = weak.sort((a, b) => a.score - b.score).slice(0, maxRegenerations);
+    logger.info(
+      `Distractor quality: ${weak.length}/${questions.length} questions under ${QUALITY_THRESHOLD}, regenerating ${batch.length}`
+    );
+
+    const replacements = await regenerateWeak(
+      batch.map(({ question, issues }) => ({ question, issues }))
+    );
+    if (!Array.isArray(replacements)) return questions;
+
+    const refined = questions.slice();
+    batch.forEach((item, i) => {
+      const replacement = replacements[i];
+      if (!isUsableReplacement(item.question, replacement)) return;
+      const candidate = {
+        ...item.question,
+        questionText: replacement.questionText,
+        options: replacement.options,
+        correctAnswer: Number(replacement.correctAnswer),
+        explanation: replacement.explanation || item.question.explanation,
+      };
+      if (scoreDistractorQuality(candidate).score > item.score) refined[item.index] = candidate;
+    });
+    return refined;
+  } catch (error) {
+    logger.warn(`Distractor refinement skipped: ${error.message}`);
+    return questions;
+  }
+}
+
 module.exports = {
   QUALITY_THRESHOLD,
   scoreDistractorQuality,
   evaluateOptionOverlap,
   evaluatePlausibility,
   buildMisconceptionHints,
+  refineWeakQuestions,
 };

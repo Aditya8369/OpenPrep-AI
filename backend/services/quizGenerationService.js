@@ -4,6 +4,8 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const quizValidationService = require('./quizValidationService');
+const distractorQualityService = require('./distractorQualityService');
+const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
@@ -47,6 +49,7 @@ if (cached) {
  * @param {string} sourceContext - Source material for grounding
  * @param {Array} existingQuestions - Previously generated questions
  * @param {string} quizId - Quiz ID for logging
+ * @param {Object} [deps] - Overridable collaborators (used by tests)
  * @returns {Promise<Object>} Validated question or null if max retries exceeded
  */
 async function generateQuestionWithValidation(
@@ -54,27 +57,51 @@ async function generateQuestionWithValidation(
   difficulty,
   sourceContext,
   existingQuestions = [],
-  quizId
+  quizId,
+  deps = {}
 ) {
+  const generate = deps.generateQuestion || generateSingleQuestion;
+  const validate = deps.validateQuestion || quizValidationService.validateQuestion;
+  const scoreQuality = deps.scoreDistractorQuality || distractorQualityService.scoreDistractorQuality;
+
   let retryCount = 0;
+  let qualityHints = null;
+  let lowQualityFallback = null;
 
   while (retryCount < MAX_RETRIES) {
     try {
       // Generate question via Gemini
-      const question = await generateSingleQuestion(topic, difficulty, sourceContext);
+      const question = await generate(topic, difficulty, sourceContext, qualityHints);
 
       // Parse JSON response
       const parsedQuestion = JSON.parse(question);
 
       // Validate the question
-      const validationResult = await quizValidationService.validateQuestion(
+      const validationResult = await validate(
         parsedQuestion,
         quizId,
         { sourceContext, existingQuestions }
       );
 
       if (validationResult.isValid) {
-        return parsedQuestion;
+        const quality = scoreQuality(parsedQuestion);
+        if (quality.passes) {
+          return parsedQuestion;
+        }
+
+        if (qualityHints === null) {
+          // First weak result: keep it as a fallback and ask once for better distractors
+          lowQualityFallback = { question: parsedQuestion, score: quality.score };
+          qualityHints = distractorQualityService.buildMisconceptionHints(quality.issues);
+          retryCount++;
+          logger.info(
+            `Distractor quality ${quality.score} is below ${distractorQualityService.QUALITY_THRESHOLD}, regenerating once`
+          );
+          continue;
+        }
+
+        // Already retried once for quality, so keep whichever attempt scored higher
+        return quality.score >= lowQualityFallback.score ? parsedQuestion : lowQualityFallback.question;
       }
 
       // Log retry
@@ -86,12 +113,12 @@ async function generateQuestionWithValidation(
 
       if (retryCount >= MAX_RETRIES) {
         console.error(`Max retries exceeded for topic: ${topic}`);
-        return null;
+        return lowQualityFallback ? lowQualityFallback.question : null;
       }
     }
   }
 
-  return null;
+  return lowQualityFallback ? lowQualityFallback.question : null;
 }
 
 /**
@@ -99,9 +126,10 @@ async function generateQuestionWithValidation(
  * @param {string} topic - Topic for the question
  * @param {string} difficulty - Difficulty level
  * @param {string} sourceContext - Source material
+ * @param {string|null} [qualityHints] - Misconception guidance added when regenerating a weak question
  * @returns {Promise<string>} JSON string of question
  */
-async function generateSingleQuestion(topic, difficulty, sourceContext) {
+async function generateSingleQuestion(topic, difficulty, sourceContext, qualityHints = null) {
   const prompt = `
 Generate a ${difficulty} multiple-choice question about "${topic}".
 
@@ -123,7 +151,7 @@ Rules:
 - Options must be distinct and realistic
 - Explanation must reference the source material
 - Ensure the question is clear and unambiguous
-`;
+${qualityHints ? `\n${qualityHints}\n` : ''}`;
 
   const result = await model.generateContent(prompt);
   const response = await result.response;

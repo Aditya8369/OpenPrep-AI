@@ -23,6 +23,8 @@ import PomodoroWidget from './components/timer/PomodoroWidget';
 import MicroReviewModal from './components/widgets/MicroReviewModal';
 import { startMicroScheduler, showMicroNotification } from './services/microScheduleWorker';
 import ColorblindFilterSVG from './components/common/ColorblindFilterSVG';
+import AriaAnnouncer from './components/common/AriaAnnouncer';
+import SkipToContent from './components/common/SkipToContent';
 import './App.css';
 
 
@@ -31,6 +33,7 @@ const Landing = lazy(() => import('./pages/Landing'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PacingCoachDashboard = lazy(() => import('./pages/PacingCoachDashboard'));
 const Register = lazy(() => import('./pages/Register'));
+const TwoFactorChallenge = lazy(() => import('./pages/TwoFactorChallenge'));
 const Login = lazy(() => import('./pages/Login'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -83,6 +86,7 @@ const KnowledgeGraphView = lazy(() => import('./components/notes/KnowledgeGraphV
 const PublicVerifyCertificate = lazy(() => import('./pages/PublicVerifyCertificate'));
 const MockExamArena = lazy(() => import('./components/exam/MockExamArena'));
 const HabitCorrelationDashboard = lazy(() => import('./pages/HabitCorrelationDashboard'));
+const AccountSecurity = lazy(() => import('./pages/AccountSecurity'));
 
 
 function App() {
@@ -202,12 +206,8 @@ function App() {
 
   return (
     <>
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[99999] focus:px-4 focus:py-2 focus:bg-amber-700 focus:text-white focus:rounded-lg focus:shadow-2xl focus:outline-none focus:ring-2 focus:ring-amber-400 font-semibold text-xs"
-      >
-        Skip to main content
-      </a>
+      <SkipToContent targetId="main-content" />
+      <AriaAnnouncer />
       {aiQuotaExceededUntil && (
         <div className="bg-red-900 border-b border-red-700 text-red-50 text-center py-2 text-xs font-semibold select-none flex items-center justify-center gap-2 relative z-[9998]">
           <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping" />
@@ -233,6 +233,8 @@ function App() {
           <Route path="/pacing-coach" element={<ProtectedRoute><PacingCoachDashboard /></ProtectedRoute>} />
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/2fa/challenge" element={<TwoFactorChallenge />} />
+          <Route path="/auth/2fa/challenge" element={<TwoFactorChallenge />} />
           <Route path="/share/:token" element={<PublicShare />} />
           <Route path="/oauth-callback" element={<OAuthCallback />} />
           <Route path="/verify-email/:token" element={<VerifyEmail />} />
@@ -506,6 +508,30 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/formula-scratchpad"
+            element={
+              <ProtectedRoute>
+                <FormulaScratchpad />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graphing-calculator"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/graph-sandbox"
+            element={
+              <ProtectedRoute>
+                <GraphingSandboxPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/study-goals"
@@ -530,6 +556,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <Settings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/security"
+            element={
+              <ProtectedRoute>
+                <AccountSecurity />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/account/security"
+            element={
+              <ProtectedRoute>
+                <AccountSecurity />
               </ProtectedRoute>
             }
           />

@@ -362,5 +362,6 @@ Return valid JSON in this exact structure:
 module.exports = {
   evaluateDistractors,
   evaluateGrammarAndSymmetry,
-  evaluateClueLeakage
+  evaluateClueLeakage,
+  evaluateNumericDistractorHeuristics,
 };

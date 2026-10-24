@@ -13,6 +13,11 @@ const { GeminiRateLimitError, GeminiServerError } = require('../services/geminiS
 const { toDateOnlyString, toLocalDateString } = require('../utils/dateUtils');
 const { generateMilestones } = require('../services/milestoneGeneratorService');
 const calendarService = require('../services/calendarService');
+const {
+  generateStudyPlanIcsWithRevisions,
+  buildGoogleCalendarUrlForPlan,
+} = require('../services/icalRevisionService');
+
 const schedulePredictorService = require('../services/schedulePredictorService');
 const studyPlanService = require('../services/studyPlanService');
 
@@ -1023,4 +1028,104 @@ exports.getReadinessScore = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Export Study Plan as RFC 5545 .ics calendar file with spaced-repetition
+ * revision reminder events (RRULE-based recurring VEVENTs).
+ *
+ * Supports query param ?revisions=true|false (default: true)
+ *
+ * @route   GET /api/study-plans/:id/export-ics
+ * @access  Private
+ * Fixes #2374
+ */
+exports.exportStudyPlanIcsWithRevisions = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const includeRevisions = req.query.revisions !== 'false';
+
+    const plan = await StudyPlan.findOne({
+      where: { id, user: req.user.id },
+      include: [{ model: Exam, as: 'examRef' }],
+    });
+
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        error: 'Study plan not found',
+      });
+    }
+
+    const timeZone = req.headers['x-timezone'] || 'UTC';
+
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid timezone supplied',
+      });
+    }
+
+    const icsContent = generateStudyPlanIcsWithRevisions(plan, timeZone, {
+      includeRevisions,
+      revisionDurationMinutes: 30,
+      alarmMinutesBefore: 15,
+    });
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="study-plan-${id}.ics"`
+    );
+
+    return res.status(200).send(icsContent);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Generate a Google Calendar pre-filled URL for the first upcoming
+ * study session in the plan.
+ *
+ * @route   GET /api/study-plans/:id/google-calendar-url
+ * @access  Private
+ * Fixes #2374
+ */
+exports.getGoogleCalendarUrl = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const plan = await StudyPlan.findOne({
+      where: { id, user: req.user.id },
+      include: [{ model: Exam, as: 'examRef' }],
+    });
+
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        error: 'Study plan not found',
+      });
+    }
+
+    const timeZone = req.headers['x-timezone'] || 'UTC';
+    const url = buildGoogleCalendarUrlForPlan(plan, timeZone);
+
+    if (!url) {
+      return res.status(404).json({
+        success: false,
+        error: 'No study sessions found to export',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { url },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 

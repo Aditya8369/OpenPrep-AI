@@ -288,6 +288,21 @@ examCountdownPreferences: {
       type: DataTypes.JSONB,
       defaultValue: [],
     },
+        twoFactorEnabled: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      allowNull: false,
+    },
+    twoFactorSecret: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: null,
+    },
+    twoFactorBackupCodes: {
+      type: DataTypes.JSONB,
+      defaultValue: [],
+      allowNull: false,
+    },
     dashboardLayout: {
       type: DataTypes.JSONB,
       allowNull: true,

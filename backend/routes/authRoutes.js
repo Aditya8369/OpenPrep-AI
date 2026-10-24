@@ -22,6 +22,9 @@ const {
   oauthSuccessCallback,
   registerOAuthEmail,
   keepalive,
+  getActiveSessions,
+  revokeSession,
+  revokeOtherSessions,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/auth');
@@ -302,6 +305,11 @@ router.post('/sso/saml/callback', express.urlencoded({ extended: true }), ssoCon
 router.post('/session/keepalive', protect, keepalive);
 router.post('/keepalive', protect, keepalive);
 
+// Multi-Device Session Management Routes (#2326)
+router.get('/sessions', protect, getActiveSessions);
+router.delete('/sessions/others', protect, revokeOtherSessions);
+router.delete('/sessions/:sessionId', protect, revokeSession);
+
 // ── Passkey / WebAuthn Routes ──
 const {
   getRegisterChallenge,
@@ -318,5 +326,17 @@ router.post('/passkey/login-challenge', getLoginChallenge);
 router.post('/passkey/login-verify', verifyLogin);
 router.get('/passkey/list', protect, listPasskeys);
 router.delete('/passkey/:id', protect, deletePasskey);
+
+
+// ---------------------------------------------------------------------------
+// Two-Factor Authentication (2FA) Routes (#2361)
+// ---------------------------------------------------------------------------
+router.post('/2fa/generate', protect, generate2FA);
+router.post('/2fa/setup', protect, generate2FA);
+router.post('/2fa/enable', protect, enable2FA);
+router.post('/2fa/verify-setup', protect, enable2FA);
+router.post('/2fa/verify', loginSmartLimiter, verify2FA);
+router.post('/2fa/verify-login', loginSmartLimiter, verify2FA);
+router.post('/2fa/disable', protect, disable2FA);
 
 module.exports = router;

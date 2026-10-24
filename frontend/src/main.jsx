@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { store } from './store'
 import { ThemeProvider } from './context/ThemeContext'
+import { AccessibilityProvider } from './context/AccessibilityContext'
 import { SyncProvider } from './context/SyncContext'
 import { PomodoroProvider } from './context/PomodoroContext'
 import { SessionTimerProvider } from './context/SessionTimerContext'
@@ -59,15 +60,17 @@ createRoot(document.getElementById('root')).render(
       <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <Provider store={store}>
           <ThemeProvider>
-            <SyncProvider>
-              <PomodoroProvider>
-                <BrowserRouter>
-                  <SessionTimerProvider>
-                    <App />
-                  </SessionTimerProvider>
-                </BrowserRouter>
-              </PomodoroProvider>
-            </SyncProvider>
+            <AccessibilityProvider>
+              <SyncProvider>
+                <PomodoroProvider>
+                  <BrowserRouter>
+                    <SessionTimerProvider>
+                      <App />
+                    </SessionTimerProvider>
+                  </BrowserRouter>
+                </PomodoroProvider>
+              </SyncProvider>
+            </AccessibilityProvider>
           </ThemeProvider>
         </Provider>
       </GoogleOAuthProvider>

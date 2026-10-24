@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck, Copy, Check, AlertTriangle, KeyRound } from 'lucide-react';
 import PasskeySettings from './PasskeySettings';
+import ActiveSessionsList from './security/ActiveSessionsList';
 
 export default function SecuritySettings() {
   const [loading, setLoading] = useState(false);
@@ -171,6 +172,9 @@ export default function SecuritySettings() {
           </form>
         </div>
       )}
+
+      {/* Active Multi-Device Sessions */}
+      <ActiveSessionsList />
 
       {/* WebAuthn Passkeys Section */}
       <PasskeySettings />

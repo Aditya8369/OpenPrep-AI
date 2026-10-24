@@ -110,6 +110,13 @@ export default function FormulaScratchpad() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/graphing-calculator')}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-900/60 cursor-pointer"
+              >
+                <Calculator className="w-3.5 h-3.5 text-indigo-400" />
+                2D/3D Graph Sandbox
+              </button>
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setIsDrawerOpen(!isDrawerOpen)}

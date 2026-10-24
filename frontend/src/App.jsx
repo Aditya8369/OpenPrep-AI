@@ -33,6 +33,7 @@ const Landing = lazy(() => import('./pages/Landing'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const PacingCoachDashboard = lazy(() => import('./pages/PacingCoachDashboard'));
 const Register = lazy(() => import('./pages/Register'));
+const TwoFactorChallenge = lazy(() => import('./pages/TwoFactorChallenge'));
 const Login = lazy(() => import('./pages/Login'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
@@ -232,6 +233,8 @@ function App() {
           <Route path="/pacing-coach" element={<ProtectedRoute><PacingCoachDashboard /></ProtectedRoute>} />
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/2fa/challenge" element={<TwoFactorChallenge />} />
+          <Route path="/auth/2fa/challenge" element={<TwoFactorChallenge />} />
           <Route path="/share/:token" element={<PublicShare />} />
           <Route path="/oauth-callback" element={<OAuthCallback />} />
           <Route path="/verify-email/:token" element={<VerifyEmail />} />

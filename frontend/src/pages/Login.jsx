@@ -93,7 +93,45 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const token = await executeCaptcha('login');
-    dispatch(loginUser({ ...formData, captchaToken: token }));
+    const result = await dispatch(loginUser({ ...formData, captchaToken: token }));
+    if (result.payload?.requires2FA) {
+      if (result.payload.tempToken) {
+        sessionStorage.setItem('openprep_2fa_tempToken', result.payload.tempToken);
+      }
+      setRequires2FA(true);
+    }
+  };
+
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    if (!totpToken) return;
+
+    setVerifying2FA(true);
+    setTwoFaError('');
+    try {
+      const tempToken = sessionStorage.getItem('openprep_2fa_tempToken') || '';
+      const response = await API.post('/auth/2fa/verify', {
+        email: formData.email,
+        tempToken,
+        token: totpToken.trim(),
+      });
+
+      if (response.data.success && response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        if (response.data.sessionId) {
+          localStorage.setItem('sessionId', response.data.sessionId);
+        }
+        sessionStorage.removeItem('openprep_2fa_tempToken');
+        dispatch(loadUser());
+        navigate('/dashboard', { replace: true });
+      } else {
+        setTwoFaError(response.data.error || 'Invalid 2FA verification code.');
+      }
+    } catch (err) {
+      setTwoFaError(err.response?.data?.error || 'Invalid 2FA code or expired session.');
+    } finally {
+      setVerifying2FA(false);
+    }
   };
 
   return (

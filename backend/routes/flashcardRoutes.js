@@ -24,6 +24,7 @@ const {
   getPodcastEpisodeById,
   deduplicateDeck,
   mergeDuplicateCards,
+  getUpcomingIntervals,
 } = require('../controllers/flashcardController');
 const {
   getLeitnerDistribution,
@@ -750,6 +751,7 @@ router.get('/', protect, cacheMiddleware(900), getFlashcards);
 
 // Parameterised routes
 router.put('/:id/review', protect, validateReviewFlashcard, reviewFlashcard);
+router.get('/:id/intervals', protect, getUpcomingIntervals);
 
 /**
  * @swagger

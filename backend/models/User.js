@@ -197,6 +197,10 @@ const User = sequelize.define(
       type: DataTypes.INTEGER,
       defaultValue: 6,
     },
+    fsrsTargetRetention: {
+      type: DataTypes.FLOAT,
+      defaultValue: 0.90,
+    },
     googleCalendarRefreshToken: {
       type: DataTypes.STRING,
       allowNull: true,

@@ -28,6 +28,7 @@ import AudioWaveform from '../components/AudioWaveform';
 import GenerateFlashcardsFromAudioModal from '../components/dashboard/GenerateFlashcardsFromAudioModal';
 import RemediationQuizModal from '../components/flashcards/RemediationQuizModal';
 import KeyboardShortcutsModal from '../components/flashcards/KeyboardShortcutsModal';
+import ReviewRatingBar from '../components/flashcards/ReviewRatingBar';
 import PomodoroTimer from '../components/dashboard/PomodoroTimer';
 import MobileBottomSheet from '../components/common/MobileBottomSheet';
 import offlineSyncService from '../services/offlineSyncService';
@@ -114,6 +115,7 @@ const FlashcardReview = () => {
     sm2Step2Interval: 6,
   });
 
+  const [targetRetention, setTargetRetention] = useState(0.90);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [isAudioGeneratorOpen, setIsAudioGeneratorOpen] = useState(false);
@@ -132,6 +134,9 @@ const FlashcardReview = () => {
             sm2Step1Interval: u.sm2Step1Interval ?? 1,
             sm2Step2Interval: u.sm2Step2Interval ?? 6,
           });
+          if (u.fsrsTargetRetention) {
+            setTargetRetention(Number(u.fsrsTargetRetention));
+          }
         }
       } catch (err) {
         console.error("Failed to load user settings", err);
@@ -319,12 +324,14 @@ const [isVoiceAnswerListening, setIsVoiceAnswerListening] = useState(false);
       setSessionStats(nextStats);
       setCurrentIndex(nextIndex);
       setIsFlipped(false);
-      persistSession({ cards, currentIndex: nextIndex, sessionStats: nextStats, failedCards: failedCardsRef.current });
-
       if (nextIndex >= cards.length) {
+        clearSession();
         soundService.playStreakFanfare();
-      } else if (quality >= 4) {
-        soundService.playSuccessChime();
+      } else {
+        persistSession({ cards, currentIndex: nextIndex, sessionStats: nextStats, failedCards: failedCardsRef.current });
+        if (quality >= 4) {
+          soundService.playSuccessChime();
+        }
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -1016,37 +1023,14 @@ useEffect(() => {
               </button>
             </div>
           )}
-          <div className="text-center text-sm font-medium text-neutral-500 dark:text-neutral-400 mb-4">
-            How well did you know this?
-          </div>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-            {[
-              { val: 0, label: 'Blackout', color: 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800/50' },
-              { val: 1, label: 'Wrong',    color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-800/50' },
-              { val: 2, label: 'Hard',     color: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50' },
-              { val: 3, label: 'Medium',   color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800/50' },
-              { val: 4, label: 'Good',     color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800/50' },
-              { val: 5, label: 'Easy',     color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50' },
-            ].map(btn => (
-              <button
-                key={btn.val}
-                aria-label={`${btn.label} (Key ${btn.val})`}
-                aria-keyshortcuts={`${btn.val}`}
-                disabled={submitting}
-                onClick={() => handleReview(btn.val)}
-                className={`py-3 px-2 rounded-xl border flex flex-col items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${btn.color}`}
-              >
-                <span className="font-bold text-lg mb-0.5">{btn.val}</span>
-                <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">{btn.label}</span>
-                <span className="mt-1 px-1.5 py-0.5 text-[9px] font-mono rounded bg-black/10 dark:bg-white/10 opacity-70">
-                  [{btn.val}]
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="text-center mt-4 text-xs text-neutral-400">
-            Pro tip: You can also use numbers 0-5 on your keyboard.
-          </div>
+          <ReviewRatingBar
+            card={currentCard}
+            onRate={(quality, rating) => handleReview(quality, rating)}
+            submitting={submitting}
+            targetRetention={targetRetention}
+            onTargetRetentionChange={setTargetRetention}
+            active={isFlipped}
+          />
         </div>
       </div>
 

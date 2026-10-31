@@ -262,8 +262,19 @@ const validateAutoTagFlashcard = [
 ];
 const validateReviewFlashcard = [
   body('quality')
+    .optional()
     .isFloat({ min: 0, max: 5 })
     .withMessage('Quality must be a number between 0 and 5'),
+  body('rating')
+    .optional()
+    .isInt({ min: 1, max: 4 })
+    .withMessage('Rating must be an integer between 1 and 4 (Again: 1, Hard: 2, Good: 3, Easy: 4)'),
+  body().custom((val) => {
+    if (val.quality === undefined && val.rating === undefined) {
+      throw new Error('Either rating (1-4) or quality (0-5) must be provided');
+    }
+    return true;
+  }),
   body('confidence')
     .optional()
     .isIn(['very_unsure', 'unsure', 'confident', 'very_confident'])

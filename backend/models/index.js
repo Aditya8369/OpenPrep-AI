@@ -43,6 +43,7 @@ const CommentFlag = require('./CommentFlag');
 const CommentVote = require('./CommentVote');
 const DeckCollaborator = require('./DeckCollaborator');
 const DeckRating = require('./DeckRating');
+const DocumentChunk = require('./DocumentChunk');
 const DoubtSession = require('./DoubtSession');
 const DoubtSessionMessage = require('./DoubtSessionMessage');
 const Exam = require('./Exam');
@@ -155,6 +156,7 @@ initModeratorAuditLog(sequelize);
 initSponsor(sequelize);
 
 // User associations
+if (!User.associations || !User.associations.bounties) {
 User.hasMany(Exam, { foreignKey: 'user', onDelete: 'CASCADE' });
 User.hasMany(Subject, { foreignKey: 'user', onDelete: 'CASCADE' });
 User.hasMany(Topic, { foreignKey: 'user', onDelete: 'CASCADE' });
@@ -453,6 +455,7 @@ BountyAnswer.belongsTo(User, { foreignKey: 'userId', as: 'author' });
 // UserSession associations
 User.hasMany(UserSession, { foreignKey: 'userId', as: 'sessions', onDelete: 'CASCADE' });
 UserSession.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+}
 
 module.exports = {
   sequelize,
@@ -479,6 +482,7 @@ module.exports = {
   CommentVote,
   DeckCollaborator,
   DeckRating,
+  DocumentChunk,
   DoubtSession,
   DoubtSessionMessage,
   Exam,

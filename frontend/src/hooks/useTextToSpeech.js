@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { splitSentences, findSentenceAt, stripMarkdown } from '../utils/textUtils';
+import audioDuckingManager from '../services/audioDuckingManager';
 
 const DEFAULT_RATES = [0.5, 1, 1.25, 1.5];
 
@@ -63,6 +64,7 @@ export function useTextToSpeech(text, { rates = DEFAULT_RATES, initialRate = get
   useEffect(() => {
     if (!supported) return;
     return () => {
+      audioDuckingManager.stopDucking('tts');
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
@@ -93,12 +95,14 @@ export function useTextToSpeech(text, { rates = DEFAULT_RATES, initialRate = get
     const finish = () => {
       setIsSpeaking(false);
       setActiveSentenceIndex(-1);
+      audioDuckingManager.stopDucking('tts');
     };
     utterance.onend = finish;
     utterance.onerror = finish;
 
     setIsSpeaking(true);
     setActiveSentenceIndex(0);
+    audioDuckingManager.startDucking('tts');
     window.speechSynthesis.speak(utterance);
   }, [supported]);
 
@@ -107,6 +111,7 @@ export function useTextToSpeech(text, { rates = DEFAULT_RATES, initialRate = get
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
     setActiveSentenceIndex(-1);
+    audioDuckingManager.stopDucking('tts');
   }, [supported]);
 
   const toggle = useCallback(() => {

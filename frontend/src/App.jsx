@@ -21,6 +21,7 @@ import Walkthrough from './components/tutorial/Walkthrough';
 import MobileBottomNav from './components/common/MobileBottomNav';
 import PomodoroWidget from './components/timer/PomodoroWidget';
 import MicroReviewModal from './components/widgets/MicroReviewModal';
+import SoundscapeMixerDrawer from './components/audio/SoundscapeMixerDrawer';
 import { startMicroScheduler, showMicroNotification } from './services/microScheduleWorker';
 import ColorblindFilterSVG from './components/common/ColorblindFilterSVG';
 import AriaAnnouncer from './components/common/AriaAnnouncer';
@@ -226,6 +227,7 @@ function App() {
       <GlobalSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
       {localStorage.getItem('token') && <PomodoroWidget />}
       <MicroReviewModal isOpen={isMicroModalOpen} onClose={() => setIsMicroModalOpen(false)} />
+      <SoundscapeMixerDrawer />
       <main id="main-content" tabIndex="-1" role="main" className="focus:outline-none min-h-screen">
         <Suspense fallback={<PageSkeleton />}>
         <Routes>

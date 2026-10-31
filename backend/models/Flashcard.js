@@ -51,40 +51,41 @@ const Flashcard = sequelize.define(
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
     },
+    // FSRS v4 attributes
     stability: {
       type: DataTypes.FLOAT,
-      defaultValue: 2.4,
       allowNull: true,
+      defaultValue: null,
     },
     fsrsDifficulty: {
       type: DataTypes.FLOAT,
-      defaultValue: 4.93,
       allowNull: true,
-    },
-    elapsedDays: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0,
-      allowNull: true,
-    },
-    scheduledDays: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0,
-      allowNull: true,
+      defaultValue: null,
     },
     reps: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      allowNull: true,
     },
     lapses: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
-      allowNull: true,
     },
     state: {
       type: DataTypes.ENUM('new', 'learning', 'review', 'relearning'),
       defaultValue: 'new',
+    },
+    retrievability: {
+      type: DataTypes.FLOAT,
       allowNull: true,
+      defaultValue: null,
+    },
+    elapsedDays: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    },
+    scheduledDays: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
     },
     tags: {
       type: DataTypes.ARRAY(DataTypes.STRING),

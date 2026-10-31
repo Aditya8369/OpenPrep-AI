@@ -453,6 +453,7 @@ app.use('/api/language', require('./routes/languageRoutes'));
 app.use('/api/squads', squadRoutes);
 app.use('/api/study', fatigueRoutes);
 app.use('/api/documents/processing', documentProcessingRoutes);
+app.use('/api/documents', require('./routes/documentSearchRoutes'));
 app.use('/api/documents', pdfAnnotationRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/subjective-grader', require('./routes/subjectiveGraderRoutes'));
@@ -599,6 +600,9 @@ app.get(['/api/v1/health', '/api/health'], async (req, res) => {
     });
   }
 });
+
+// Connection pool telemetry (#2363)
+app.get('/api/health/db', require('./controllers/dbHealthController').getDatabaseHealth);
 
 // Secured metrics endpoint exposing Prometheus scrapable formatting
 app.get(['/metrics', '/api/metrics'], async (req, res) => {

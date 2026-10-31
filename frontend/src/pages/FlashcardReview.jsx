@@ -28,6 +28,7 @@ import AudioWaveform from '../components/AudioWaveform';
 import GenerateFlashcardsFromAudioModal from '../components/dashboard/GenerateFlashcardsFromAudioModal';
 import RemediationQuizModal from '../components/flashcards/RemediationQuizModal';
 import KeyboardShortcutsModal from '../components/flashcards/KeyboardShortcutsModal';
+import ReviewRatingBar from '../components/flashcards/ReviewRatingBar';
 import PomodoroTimer from '../components/dashboard/PomodoroTimer';
 import MobileBottomSheet from '../components/common/MobileBottomSheet';
 import ReviewRatingBar from '../components/flashcards/ReviewRatingBar';
@@ -115,6 +116,7 @@ const FlashcardReview = () => {
     sm2Step2Interval: 6,
   });
 
+  const [targetRetention, setTargetRetention] = useState(0.90);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [isAudioGeneratorOpen, setIsAudioGeneratorOpen] = useState(false);
@@ -133,6 +135,9 @@ const FlashcardReview = () => {
             sm2Step1Interval: u.sm2Step1Interval ?? 1,
             sm2Step2Interval: u.sm2Step2Interval ?? 6,
           });
+          if (u.fsrsTargetRetention) {
+            setTargetRetention(Number(u.fsrsTargetRetention));
+          }
         }
       } catch (err) {
         console.error("Failed to load user settings", err);
@@ -262,6 +267,12 @@ const [isVoiceAnswerListening, setIsVoiceAnswerListening] = useState(false);
   }, []);
 
   const currentCard = cards[currentIndex];
+  const { mode, setMode, toggleReverse, shuffleDeck, promptText, answerText } = useFlashcardSession({
+    cards,
+    setCards,
+    currentIndex,
+    currentCard,
+  });
   const isSessionComplete = !loading && cards.length > 0 && currentIndex >= cards.length;
   const noCardsDue = !loading && cards.length === 0;
 
@@ -320,12 +331,14 @@ const [isVoiceAnswerListening, setIsVoiceAnswerListening] = useState(false);
       setSessionStats(nextStats);
       setCurrentIndex(nextIndex);
       setIsFlipped(false);
-      persistSession({ cards, currentIndex: nextIndex, sessionStats: nextStats, failedCards: failedCardsRef.current });
-
       if (nextIndex >= cards.length) {
+        clearSession();
         soundService.playStreakFanfare();
-      } else if (quality >= 4) {
-        soundService.playSuccessChime();
+      } else {
+        persistSession({ cards, currentIndex: nextIndex, sessionStats: nextStats, failedCards: failedCardsRef.current });
+        if (quality >= 4) {
+          soundService.playSuccessChime();
+        }
       }
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -369,9 +382,9 @@ const extractAnswerKeywords = useCallback((text) => {
 
 const validateVoiceAnswer = useCallback(
   (transcript) => {
-    if (!currentCard?.back || !transcript) return;
+    if (!answerText || !transcript) return;
 
-    const expectedKeywords = extractAnswerKeywords(currentCard.back);
+    const expectedKeywords = extractAnswerKeywords(answerText);
     const spokenWords = new Set(extractAnswerKeywords(transcript));
 
     if (expectedKeywords.length === 0) return;
@@ -401,7 +414,7 @@ const validateVoiceAnswer = useCallback(
       });
     }
   },
-  [currentCard, extractAnswerKeywords, handleCardFlip, isFlipped]
+  [answerText, extractAnswerKeywords, handleCardFlip, isFlipped]
 );
 const {
   isSupported,
@@ -444,17 +457,17 @@ useEffect(() => {
   useEffect(() => {
     cancelSpeech();
     if (isEnabled && !isPaused && currentCard) {
-       const textToRead = isFlipped ? currentCard.back : currentCard.front;
+       const textToRead = isFlipped ? answerText : promptText;
        speak(textToRead);
     }
-  }, [speechKey, isEnabled, isPaused, currentCard, speak, cancelSpeech]);
+  }, [speechKey, isEnabled, isPaused, currentCard, speak, cancelSpeech, promptText, answerText]);
 
   const handleSpeak = (e) => {
     e.stopPropagation();
     if (isSpeaking) {
       cancelSpeech();
     } else {
-      const textToRead = isFlipped ? currentCard?.back : currentCard?.front;
+      const textToRead = isFlipped ? answerText : promptText;
       speak(textToRead);
     }
   };
@@ -469,7 +482,7 @@ useEffect(() => {
     if (isSpeaking) {
       cancelSpeech();
       setTimeout(() => {
-        const textToRead = isFlipped ? currentCard?.back : currentCard?.front;
+        const textToRead = isFlipped ? answerText : promptText;
         speak(textToRead); // Will use the newly set rate implicitly because hook deps update
       }, 50);
     }
@@ -520,6 +533,8 @@ useEffect(() => {
           }
         },
       },
+      { key: 'r', handler: toggleReverse },
+      { key: 's', handler: shuffleDeck },
       {
         key: 'n',
         handler: () => {
@@ -831,6 +846,8 @@ useEffect(() => {
     )}
   </div>
 )}
+      <ReviewHeaderControls mode={mode} onModeChange={setMode} onShuffle={shuffleDeck} />
+
       {/* Progress Bar */}
       <div className="w-full max-w-3xl h-1.5 bg-neutral-200 dark:bg-slate-800 rounded-full mb-12 overflow-hidden">
         <motion.div 
@@ -902,7 +919,7 @@ useEffect(() => {
               </div>
 
               <h3 className="text-2xl md:text-3xl font-bold font-inter text-neutral-800 dark:text-neutral-100 text-center leading-snug">
-                <ClozeMathRenderer text={currentCard.front} mode="question" />
+                <ClozeMathRenderer text={promptText} mode="question" />
               </h3>
               
               <div className="absolute bottom-6 flex items-center text-sm font-medium text-neutral-400 opacity-70 group-hover:opacity-100 transition-opacity">
@@ -968,7 +985,7 @@ useEffect(() => {
 
               <div className="flex-1 w-full flex flex-col items-center justify-center">
                 <p className="text-xl md:text-2xl text-neutral-800 dark:text-neutral-200 font-inter leading-relaxed text-center">
-                  <ClozeMathRenderer text={currentCard.back} mode="answer" />
+                  <ClozeMathRenderer text={answerText} mode="answer" />
                 </p>
                 {currentCard.sourceUrl && currentCard.timestampSeconds !== undefined && currentCard.timestampSeconds !== null && (
                   <a 
@@ -1019,10 +1036,11 @@ useEffect(() => {
           )}
           <ReviewRatingBar
             card={currentCard}
+            onRate={(quality, rating) => handleReview(quality, rating)}
             submitting={submitting}
-            onRate={(fsrsRating, qualityEquivalent, targetRetention) => {
-              handleReview(qualityEquivalent, fsrsRating, targetRetention);
-            }}
+            targetRetention={targetRetention}
+            onTargetRetentionChange={setTargetRetention}
+            active={isFlipped}
           />
         </div>
       </div>

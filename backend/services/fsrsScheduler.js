@@ -1,308 +1,271 @@
 /**
- * @fileoverview Free Spaced Repetition Scheduler (FSRS v4) Algorithm
- * Implements the DSR (Difficulty, Stability, Retrievability) mathematical model
- * based on FSRS v4 parameter optimization.
+ * Free Spaced Repetition Scheduler (FSRS v4) Engine
+ * Implements the DSR (Difficulty, Stability, Retrievability) mathematical model.
+ *
+ * References:
+ * - FSRS v4 specification & algorithm
+ * - Standard weights: w0..w16
+ * - Retention model: R(t, S) = (1 + FACTOR * (t / S))^DECAY
+ * - Interval formula: I(r, S) = (S / FACTOR) * (r^(1/DECAY) - 1)
  */
 
-const FACTOR = 19.0 / 81.0; // 0.23456790123...
+// Universal FSRS v4 constants
+const FACTOR = 19 / 81; // ~0.2345679 ensures R(S, S) = 0.90
 const DECAY = -0.5;
 
-/**
- * Standard FSRS v4 Default Parameter Weights (w0 through w16)
- */
-const DEFAULT_PARAMETERS = [
-  0.4,   // w[0]: S0(Again)
-  0.6,   // w[1]: S0(Hard)
-  2.4,   // w[2]: S0(Good)
-  5.8,   // w[3]: S0(Easy)
-  4.93,  // w[4]: D0 base difficulty
-  0.94,  // w[5]: D0 modifier
-  0.86,  // w[6]: D transition factor
-  0.01,  // w[7]: D mean reversion weight
-  1.49,  // w[8]: S_recall base
-  0.14,  // w[9]: S_recall S decay power
-  0.94,  // w[10]: S_recall R factor
-  2.18,  // w[11]: S_forget base
-  0.05,  // w[12]: S_forget D power
-  0.34,  // w[13]: S_forget S power
-  1.26,  // w[14]: S_forget R factor
-  0.29,  // w[15]: Hard penalty
-  2.61,  // w[16]: Easy bonus
+// Default optimized FSRS v4 parameters (w0..w16)
+const DEFAULT_WEIGHTS = [
+  0.4, 0.6, 2.4, 5.8, // w0-w3: Initial stability for Again, Hard, Good, Easy
+  4.93, 0.94, // w4-w5: Initial difficulty base & slope
+  0.86, 0.01, // w6-w7: Difficulty update slope & mean reversion weight
+  1.49, 0.14, 0.94, // w8-w10: Stability update on recall
+  2.18, 0.05, 0.34, 1.26, // w11-w14: Stability update on forget (lapse)
+  0.29, 2.61, // w15-w16: Hard penalty & Easy bonus
 ];
 
-const Rating = {
-  Again: 1,
-  Hard: 2,
-  Good: 3,
-  Easy: 4,
+const RATING = {
+  AGAIN: 1,
+  HARD: 2,
+  GOOD: 3,
+  EASY: 4,
 };
 
-const State = {
-  New: 'new',
-  Learning: 'learning',
-  Review: 'review',
-  Relearning: 'relearning',
+const STATE = {
+  NEW: 'new',
+  LEARNING: 'learning',
+  REVIEW: 'review',
+  RELEARNING: 'relearning',
 };
 
-/**
- * Calculates retrievability R(t, S) = (1 + FACTOR * (t / S))^DECAY
- *
- * @param {number} elapsedDays - Time in days since last review
- * @param {number} stability - Card memory stability in days
- * @returns {number} Probability of recall between 0.0 and 1.0
- */
-function calculateRetrievability(elapsedDays, stability) {
-  if (stability <= 0) return 0.0;
-  if (elapsedDays <= 0) return 1.0;
-  const factorRatio = (FACTOR * elapsedDays) / stability;
-  const r = Math.pow(1 + factorRatio, DECAY);
-  return Math.max(0.0, Math.min(1.0, r));
-}
-
-/**
- * Calculates next review interval in days given target retention r and stability S.
- * I(r, S) = (S / FACTOR) * (r^(1/DECAY) - 1)
- *
- * @param {number} requestedRetention - Target retention (e.g. 0.90 for 90%)
- * @param {number} stability - Current card stability in days
- * @returns {number} Interval in days
- */
-function calculateInterval(requestedRetention = 0.90, stability) {
-  const r = Math.max(0.70, Math.min(0.99, requestedRetention));
-  const s = Math.max(0.1, stability);
-  // (r^(1 / -0.5) - 1) = (r^-2 - 1)
-  const power = Math.pow(r, 1.0 / DECAY) - 1.0;
-  const interval = (s / FACTOR) * power;
-  return Math.max(1, Math.round(interval));
-}
-
-/**
- * Clamps a difficulty score between 1.0 and 10.0.
- */
-function clampDifficulty(d) {
-  return Math.max(1.0, Math.min(10.0, d));
-}
-
-/**
- * Maps legacy 0-5 quality to FSRS 1-4 rating.
- * 0, 1 -> 1 (Again)
- * 2, 3 -> 2 (Hard)
- * 4    -> 3 (Good)
- * 5    -> 4 (Easy)
- */
-function mapQualityToRating(quality) {
-  const q = Number(quality);
-  if (q <= 1) return Rating.Again;
-  if (q <= 3) return Rating.Hard;
-  if (q === 4) return Rating.Good;
-  return Rating.Easy;
-}
-
-/**
- * Converts legacy SM-2 flashcard parameters to initial FSRS v4 DSR values.
- *
- * @param {object} params
- * @param {number} [params.efactor=2.5]
- * @param {number} [params.interval=1]
- * @param {number} [params.repetitions=0]
- * @returns {{ stability: number, difficulty: number, reps: number, lapses: number, state: string, elapsedDays: number, scheduledDays: number }}
- */
-function convertSM2ToFSRS({ efactor = 2.5, interval = 1, repetitions = 0 } = {}) {
-  const ef = Math.max(1.3, Math.min(3.0, Number(efactor) || 2.5));
-  // Higher efactor means lower difficulty
-  const difficulty = clampDifficulty(11.0 - ef * 3.0);
-  const stability = Math.max(0.1, Number(interval) || 1.0);
-  const reps = Math.max(0, Number(repetitions) || 0);
-  const lapses = reps > 0 && interval <= 1 ? 1 : 0;
-  const state = reps === 0 ? State.New : (lapses > 0 ? State.Relearning : State.Review);
-
-  return {
-    stability,
-    difficulty,
-    reps,
-    lapses,
-    state,
-    elapsedDays: Math.max(0, Number(interval) || 1),
-    scheduledDays: Math.max(1, Number(interval) || 1),
-  };
-}
-
-/**
- * Core FSRS v4 scheduler transition.
- *
- * @param {object} card - Flashcard object or state
- * @param {number} rating - 1 (Again), 2 (Hard), 3 (Good), 4 (Easy)
- * @param {number} [requestedRetention=0.90] - Desired retention rate (default: 0.90)
- * @param {number} [elapsedDaysOverride=null] - Optional elapsed days
- * @param {number[]} [weights=DEFAULT_PARAMETERS]
- * @returns {object} Updated card scheduling state
- */
-function calculateFSRS(
-  card = {},
-  rating,
-  requestedRetention = 0.90,
-  elapsedDaysOverride = null,
-  weights = DEFAULT_PARAMETERS
-) {
-  const G = Number(rating);
-  if (![Rating.Again, Rating.Hard, Rating.Good, Rating.Easy].includes(G)) {
-    throw new Error('FSRS Rating must be 1 (Again), 2 (Hard), 3 (Good), or 4 (Easy)');
+class FSRSScheduler {
+  constructor(weights = DEFAULT_WEIGHTS, requestRetention = 0.90) {
+    this.w = weights && weights.length === 17 ? weights : DEFAULT_WEIGHTS;
+    this.requestRetention = requestRetention >= 0.7 && requestRetention <= 0.99 ? requestRetention : 0.90;
   }
 
-  // Read or migrate current state
-  let stability = Number(card.stability);
-  let difficulty = Number(card.difficulty ?? card.fsrsDifficulty);
-  let reps = Number(card.reps ?? card.repetitions ?? 0);
-  let lapses = Number(card.lapses ?? 0);
-  let state = card.state || (reps === 0 ? State.New : State.Review);
-
-  // Fallback migration if card only had SM-2 fields
-  if (isNaN(stability) || isNaN(difficulty)) {
-    const migrated = convertSM2ToFSRS({
-      efactor: card.efactor ?? 2.5,
-      interval: card.interval ?? 1,
-      repetitions: card.repetitions ?? 0,
-    });
-    stability = isNaN(stability) ? migrated.stability : stability;
-    difficulty = isNaN(difficulty) ? migrated.difficulty : difficulty;
-    reps = migrated.reps;
-    lapses = migrated.lapses;
-    state = migrated.state;
+  /**
+   * Probability of recall after elapsed time t (in days) given stability S (in days)
+   * R(t, S) = (1 + FACTOR * (t / S))^DECAY
+   */
+  calculateRetrievability(elapsedDays, stability) {
+    if (!stability || stability <= 0) return 0;
+    if (elapsedDays <= 0) return 1.0;
+    return Math.pow(1 + FACTOR * (elapsedDays / stability), DECAY);
   }
 
-  // Calculate elapsed days since last review
-  let elapsedDays = elapsedDaysOverride;
-  if (elapsedDays === null || elapsedDays === undefined) {
-    if (card.lastReviewedAt || card.updatedAt) {
-      const lastDate = new Date(card.lastReviewedAt || card.updatedAt).getTime();
-      elapsedDays = Math.max(0, Math.floor((Date.now() - lastDate) / (1000 * 60 * 60 * 24)));
+  /**
+   * Calculate next interval (in days) required to maintain target retention r
+   * I(r, S) = (S / FACTOR) * (r^(1/DECAY) - 1)
+   */
+  calculateNextInterval(stability, requestRetention = this.requestRetention) {
+    if (!stability || stability <= 0) return 1;
+    const r = requestRetention || this.requestRetention;
+    const interval = (stability / FACTOR) * (Math.pow(r, 1 / DECAY) - 1);
+    return Math.max(1, Math.round(interval));
+  }
+
+  /**
+   * Initial Stability S0(G) where G in {1, 2, 3, 4}
+   */
+  initialStability(rating) {
+    const idx = Math.max(1, Math.min(4, Math.round(rating))) - 1;
+    return Math.max(0.1, this.w[idx]);
+  }
+
+  /**
+   * Initial Difficulty D0(G) = w4 - (G - 3) * w5 clamped to [1.0, 10.0]
+   */
+  initialDifficulty(rating) {
+    const g = Math.max(1, Math.min(4, Math.round(rating)));
+    const d = this.w[4] - (g - 3) * this.w[5];
+    return Math.max(1.0, Math.min(10.0, d));
+  }
+
+  /**
+   * Mean-reverting next difficulty update:
+   * deltaD = -w6 * (G - 3)
+   * D' = w7 * D0(3) + (1 - w7) * (D + deltaD)
+   */
+  nextDifficulty(difficulty, rating) {
+    const g = Math.max(1, Math.min(4, Math.round(rating)));
+    const deltaD = -this.w[6] * (g - 3);
+    const dPrime = this.w[7] * this.w[4] + (1 - this.w[7]) * (difficulty + deltaD);
+    return Math.max(1.0, Math.min(10.0, dPrime));
+  }
+
+  /**
+   * Stability increase on successful recall (Hard, Good, Easy)
+   */
+  stabilityOnRecall(difficulty, stability, retrievability, rating) {
+    const g = Math.max(2, Math.min(4, Math.round(rating)));
+    let bonus = 1.0;
+    if (g === RATING.HARD) bonus = this.w[15];
+    if (g === RATING.EASY) bonus = this.w[16];
+
+    const hardPenaltyOrBonus = bonus;
+    const sRecall =
+      stability *
+      (1 +
+        Math.exp(this.w[8]) *
+          (11 - difficulty) *
+          Math.pow(stability, -this.w[9]) *
+          (Math.exp(this.w[10] * (1 - retrievability)) - 1) *
+          hardPenaltyOrBonus);
+
+    return Math.max(0.1, sRecall);
+  }
+
+  /**
+   * Stability reduction on forgetting/lapse (Again)
+   */
+  stabilityOnForget(difficulty, stability, retrievability) {
+    const sForget =
+      this.w[11] *
+      Math.pow(difficulty, -this.w[12]) *
+      (Math.pow(stability + 1, this.w[13]) - 1) *
+      Math.exp(this.w[14] * (1 - retrievability));
+
+    return Math.max(0.1, Math.min(stability, sForget));
+  }
+
+  /**
+   * Main transition step for review execution
+   * @param {Object} card Current card attributes
+   * @param {number} rating Rating: 1 (Again), 2 (Hard), 3 (Good), 4 (Easy)
+   * @param {number} [elapsedDays] Days since previous review
+   * @param {number} [targetRetention] Target retention (e.g. 0.90)
+   */
+  step(card = {}, rating, elapsedDays = null, targetRetention = null) {
+    const g = Math.max(1, Math.min(4, Math.round(rating)));
+    const retention = targetRetention || this.requestRetention;
+
+    const currentStability = typeof card.stability === 'number' && card.stability > 0 ? card.stability : null;
+    const currentDifficulty = typeof card.difficulty === 'number' && card.difficulty >= 1 ? card.difficulty : null;
+    const currentState = card.state || STATE.NEW;
+    const reps = (card.reps || 0) + 1;
+    let lapses = card.lapses || 0;
+
+    let nextS;
+    let nextD;
+    let nextState;
+
+    if (currentStability === null || currentDifficulty === null || currentState === STATE.NEW) {
+      // First review of a card
+      nextS = this.initialStability(g);
+      nextD = this.initialDifficulty(g);
+      nextState = g === RATING.AGAIN ? STATE.LEARNING : STATE.REVIEW;
+      if (g === RATING.AGAIN) lapses += 1;
     } else {
-      elapsedDays = card.elapsedDays || 0;
+      // Subsequent review
+      const actualElapsed = typeof elapsedDays === 'number' && elapsedDays >= 0 ? elapsedDays : card.elapsedDays || 1;
+      const R = this.calculateRetrievability(actualElapsed, currentStability);
+      nextD = this.nextDifficulty(currentDifficulty, g);
+
+      if (g === RATING.AGAIN) {
+        nextS = this.stabilityOnForget(currentDifficulty, currentStability, R);
+        nextState = STATE.RELEARNING;
+        lapses += 1;
+      } else {
+        nextS = this.stabilityOnRecall(currentDifficulty, currentStability, R, g);
+        nextState = STATE.REVIEW;
+      }
     }
-  }
 
-  let newStability;
-  let newDifficulty;
-  let nextState;
+    const scheduledDays = this.calculateNextInterval(nextS, retention);
 
-  // 1. First Review (New Card)
-  if (state === State.New || reps === 0) {
-    newStability = weights[G - 1]; // S0(G)
-    newDifficulty = clampDifficulty(weights[4] - (G - 3) * weights[5]); // D0(G)
-    nextState = G === Rating.Again ? State.Learning : State.Review;
-    if (G === Rating.Again) lapses += 1;
-  } else {
-    // 2. Subsequent Review
-    const r = calculateRetrievability(elapsedDays, stability);
-
-    // Calculate updated difficulty D'
-    const nextD = difficulty - weights[6] * (G - 3);
-    newDifficulty = clampDifficulty(weights[7] * weights[4] + (1 - weights[7]) * nextD);
-
-    if (G === Rating.Again) {
-      // Lapse / Recall Failure
-      const forgetBase = weights[11];
-      const dFactor = Math.pow(difficulty, -weights[12]);
-      const sFactor = Math.pow(stability + 1, weights[13]) - 1;
-      const rFactor = Math.exp((1 - r) * weights[14]);
-      newStability = Math.max(0.1, forgetBase * dFactor * sFactor * rFactor);
-      lapses += 1;
-      nextState = State.Relearning;
-    } else {
-      // Successful Recall (Hard, Good, Easy)
-      const hardPenalty = G === Rating.Hard ? weights[15] : 1.0;
-      const easyBonus = G === Rating.Easy ? weights[16] : 1.0;
-      const recallBase = Math.exp(weights[8]);
-      const dFactor = 11 - difficulty;
-      const sFactor = Math.pow(stability, -weights[9]);
-      const rFactor = Math.exp((1 - r) * weights[10]) - 1;
-
-      const stabilityRecall = stability * (1 + recallBase * dFactor * sFactor * rFactor * hardPenalty * easyBonus);
-      newStability = Math.max(0.1, stabilityRecall);
-      nextState = State.Review;
-    }
-  }
-
-  reps += 1;
-  const nextInterval = G === Rating.Again ? 1 : calculateInterval(requestedRetention, newStability);
-  const retrievability = calculateRetrievability(elapsedDays, newStability);
-  const nextReviewDate = new Date(Date.now() + nextInterval * 24 * 60 * 60 * 1000);
-
-  return {
-    stability: Number(newStability.toFixed(4)),
-    difficulty: Number(newDifficulty.toFixed(2)),
-    interval: nextInterval,
-    scheduledDays: nextInterval,
-    elapsedDays,
-    reps,
-    lapses,
-    state: nextState,
-    retrievability: Number(retrievability.toFixed(4)),
-    nextReviewDate,
-  };
-}
-
-/**
- * Formats review interval for UI presentation (e.g., '10m', '2d', '6d', '14d', '2mo').
- *
- * @param {number} days
- * @param {number} rating
- * @returns {string}
- */
-function formatInterval(days, rating) {
-  if (rating === Rating.Again) {
-    return '10m';
-  }
-  if (days <= 0) return '10m';
-  if (days === 1) return '1d';
-  if (days < 30) return `${Math.round(days)}d`;
-  if (days < 365) return `${Math.round(days / 30)}mo`;
-  return `${(days / 365).toFixed(1)}y`;
-}
-
-/**
- * Predicts upcoming intervals for all 4 response ratings for real-time UI button badges.
- *
- * @param {object} card - Flashcard object or state
- * @param {number} [requestedRetention=0.90] - Target retention rate
- * @returns {object} Intervals keyed by again, hard, good, easy
- */
-function calculateUpcomingIntervals(card, requestedRetention = 0.90) {
-  const configs = [
-    { rating: Rating.Again, key: 'again', label: 'Again', color: 'red' },
-    { rating: Rating.Hard, key: 'hard', label: 'Hard', color: 'orange' },
-    { rating: Rating.Good, key: 'good', label: 'Good', color: 'green' },
-    { rating: Rating.Easy, key: 'easy', label: 'Easy', color: 'emerald' },
-  ];
-
-  const result = {};
-  for (const cfg of configs) {
-    const calculation = calculateFSRS(card, cfg.rating, requestedRetention);
-    result[cfg.key] = {
-      rating: cfg.rating,
-      label: cfg.label,
-      color: cfg.color,
-      intervalDays: calculation.interval,
-      intervalFormatted: formatInterval(calculation.interval, cfg.rating),
-      stability: calculation.stability,
-      difficulty: calculation.difficulty,
+    return {
+      stability: Number(nextS.toFixed(4)),
+      difficulty: Number(nextD.toFixed(4)),
+      scheduledDays,
+      interval: scheduledDays,
+      reps,
+      lapses,
+      state: nextState,
+      retrievability: Number(this.calculateRetrievability(0, nextS).toFixed(4)),
     };
   }
 
-  return result;
+  /**
+   * Forecast upcoming review intervals for all 4 ratings for UI badge rendering
+   */
+  calculateUpcomingIntervals(card = {}, elapsedDays = 0, targetRetention = null) {
+    const results = {};
+    const retention = targetRetention || this.requestRetention;
+
+    [RATING.AGAIN, RATING.HARD, RATING.GOOD, RATING.EASY].forEach((rating) => {
+      const forecast = this.step(card, rating, elapsedDays, retention);
+      results[rating] = {
+        days: forecast.scheduledDays,
+        formatted: this.formatInterval(forecast.scheduledDays, rating),
+      };
+    });
+
+    return results;
+  }
+
+  /**
+   * Human readable interval formatting (<10m, 1d, 3d, 14d, 1.2mo, 1.5y)
+   */
+  formatInterval(days, rating) {
+    if (rating === RATING.AGAIN && days <= 1) {
+      return '< 10m';
+    }
+    if (days < 1) {
+      return `${Math.max(10, Math.round(days * 24 * 60))}m`;
+    }
+    if (days === 1) {
+      return '1d';
+    }
+    if (days < 30) {
+      return `${Math.round(days)}d`;
+    }
+    if (days < 365) {
+      const months = (days / 30).toFixed(1).replace(/\.0$/, '');
+      return `${months}mo`;
+    }
+    const years = (days / 365).toFixed(1).replace(/\.0$/, '');
+    return `${years}y`;
+  }
+
+  /**
+   * Convert legacy SuperMemo SM-2 card parameters into initial FSRS (S, D)
+   */
+  convertSM2ToFSRS(sm2Card = {}) {
+    const efactor = typeof sm2Card.efactor === 'number' ? sm2Card.efactor : 2.5;
+    const interval = typeof sm2Card.interval === 'number' ? sm2Card.interval : 1;
+    const repetitions = typeof sm2Card.repetitions === 'number' ? sm2Card.repetitions : 0;
+
+    // Invert E-factor [1.3 to 2.5+] to Difficulty [1.0 to 10.0]
+    // efactor 2.5 -> difficulty 4.0, efactor 1.3 -> difficulty 9.5
+    const normalizedEF = Math.max(1.3, Math.min(3.0, efactor));
+    const difficulty = Math.max(1.0, Math.min(10.0, 11.0 - (normalizedEF - 1.3) * (9.0 / 1.7)));
+
+    // Estimate stability in days from interval and repetitions
+    const stability = Math.max(0.4, Number(interval) || 1.0);
+
+    let state = STATE.NEW;
+    if (repetitions > 1 && interval > 1) {
+      state = STATE.REVIEW;
+    } else if (repetitions === 1) {
+      state = STATE.LEARNING;
+    }
+
+    return {
+      stability: Number(stability.toFixed(2)),
+      difficulty: Number(difficulty.toFixed(2)),
+      reps: repetitions,
+      lapses: 0,
+      state,
+      scheduledDays: Math.max(1, Math.round(interval)),
+    };
+  }
 }
 
 module.exports = {
+  FSRSScheduler,
+  DEFAULT_WEIGHTS,
+  RATING,
+  STATE,
   FACTOR,
   DECAY,
-  DEFAULT_PARAMETERS,
-  Rating,
-  State,
-  calculateRetrievability,
-  calculateInterval,
-  calculateFSRS,
-  calculateUpcomingIntervals,
-  convertSM2ToFSRS,
-  mapQualityToRating,
-  formatInterval,
 };

@@ -24,12 +24,16 @@ const {
   getPodcastEpisodeById,
   deduplicateDeck,
   mergeDuplicateCards,
-  getFlashcardUpcomingIntervals,
+  getUpcomingIntervals,
 } = require('../controllers/flashcardController');
 const {
   getLeitnerDistribution,
   getDueForecast,
 } = require('../controllers/flashcardAnalyticsController');
+const {
+  getDeckRetentionCurve,
+  getRetentionHeatmap,
+} = require('../controllers/flashcardRetentionController');
 const { protect } = require('../middleware/auth');
 const cacheMiddleware = require('../middleware/cacheMiddleware');
 const { aiLimiter } = require('../middleware/rateLimiter');
@@ -50,6 +54,8 @@ validateGenerateAIFlashcards,
 // Spaced Repetition Analytics Routes
 router.get('/analytics/leitner-distribution', protect, getLeitnerDistribution);
 router.get('/analytics/due-forecast', protect, getDueForecast);
+router.get('/analytics/retention-heatmap', protect, getRetentionHeatmap);
+router.get('/deck/:id/retention-curve', protect, getDeckRetentionCurve);
 
 
 /**
@@ -752,6 +758,7 @@ router.get('/', protect, cacheMiddleware(900), getFlashcards);
 // Parameterised routes
 router.get('/:id/intervals', protect, getFlashcardUpcomingIntervals);
 router.put('/:id/review', protect, validateReviewFlashcard, reviewFlashcard);
+router.get('/:id/intervals', protect, getUpcomingIntervals);
 
 /**
  * @swagger

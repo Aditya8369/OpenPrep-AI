@@ -218,7 +218,12 @@ API.interceptors.response.use(
 
     if (error.response?.status === 429) {
       const data = error.response.data;
-      const retryInSeconds = data?.retryInSeconds || parseInt(error.response.headers['retry-after'], 10) || 900;
+      const retryInSeconds =
+        data?.retryInSeconds ||
+        data?.resetCountdownSeconds ||
+        data?.retryAfter ||
+        parseInt(error.response.headers?.['retry-after'] || error.response.headers?.['Retry-After'], 10) ||
+        900;
       const errorMsg = data?.error || 'AI daily usage quota exceeded.';
 
       const resetTime = Date.now() + retryInSeconds * 1000;
@@ -387,6 +392,10 @@ export const evaluateSubjectiveAnswer = (payload) =>
 export const generateDistractors = (payload) =>
   API.post('/quizzes/generate-distractors', payload);
 
+// Syllabus overlap: list the user's syllabi, then compare 2+ of them
+export const getSyllabusCatalog = () => API.get('/syllabus');
+export const compareSyllabi = (syllabusIds) => API.post('/syllabus/compare', { syllabusIds });
+
 export const getQuizRecommendations = (userId, params) =>
   API.get(`/recommendations/${userId}`, { params });
 
@@ -424,6 +433,11 @@ export const getLeitnerDistribution = (deckId = null) =>
 
 export const getDueForecast = (deckId = null) =>
   API.get('/flashcards/analytics/due-forecast', { params: { deckId } });
+
+export const getDeckRetentionCurve = (deckId, daysDelay = 3) =>
+  API.get(`/flashcards/deck/${deckId}/retention-curve`, { params: { daysDelay } });
+
+export const getRetentionHeatmap = () => API.get('/flashcards/analytics/retention-heatmap');
 
 // ── Smart Focus Pomodoro APIs ───────────────────────────────────────────
 // Consumed by components/timer/PomodoroWidget.jsx, which renders for every
